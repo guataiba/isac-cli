@@ -1,0 +1,24 @@
+{
+  "mcpServers": {
+    "chrome-devtools": {
+      "command": "npx",
+      "args": ["-y", "chrome-devtools-mcp@latest"]
+    },
+    "reactbits": {
+      "command": "npx",
+      "args": ["-y", "reactbits-mcp-server"]
+    },
+    "shadcn": {
+      "type": "http",
+      "url": "https://www.shadcn.io/api/mcp"
+    },
+    "vercel": {
+      "type": "http",
+      "url": "https://mcp.vercel.com"
+    },
+    "hugeicons": {
+      "command": "npx",
+      "args": ["-y", "@hugeicons/mcp-server"]
+    }
+  }
+}

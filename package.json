@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "echo \"No tests configured\" && exit 0"
   },
   "dependencies": {
     "next": "16.1.6",
