@@ -1,7 +1,4 @@
 import { spawn } from "node:child_process";
-import { writeFileSync, unlinkSync, mkdtempSync } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
 import type { PhaseConfig, PhaseOutput } from "./types.js";
 
 export async function runClaudePhase(
@@ -34,17 +31,8 @@ export async function runClaudePhase(
     args.push("--resume", resumeSessionId);
   }
 
-  // Write prompt to temp file if long, otherwise pass inline
-  let tempPromptFile: string | null = null;
-
-  if (config.prompt.length > 1000) {
-    const tempDir = mkdtempSync(join(tmpdir(), "isac-"));
-    tempPromptFile = join(tempDir, "prompt.md");
-    writeFileSync(tempPromptFile, config.prompt, "utf-8");
-    args.push("--prompt-file", tempPromptFile);
-  } else {
-    args.push(config.prompt);
-  }
+  // Pass prompt via -p flag
+  args.push("-p", config.prompt);
 
   return new Promise<PhaseOutput>((resolve, reject) => {
     const timeout = config.timeout ?? 600_000; // 10 min default
@@ -111,15 +99,6 @@ export async function runClaudePhase(
     proc.on("close", (code) => {
       clearTimeout(timer);
 
-      // Clean up temp file
-      if (tempPromptFile) {
-        try {
-          unlinkSync(tempPromptFile);
-        } catch {
-          // ignore
-        }
-      }
-
       // Process remaining buffer
       if (buffer.trim()) {
         try {
@@ -157,13 +136,6 @@ export async function runClaudePhase(
 
     proc.on("error", (err) => {
       clearTimeout(timer);
-      if (tempPromptFile) {
-        try {
-          unlinkSync(tempPromptFile);
-        } catch {
-          // ignore
-        }
-      }
       reject(
         new Error(
           `Failed to spawn claude for phase "${config.name}": ${err.message}`,
