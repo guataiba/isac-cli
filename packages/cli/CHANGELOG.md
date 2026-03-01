@@ -1,5 +1,13 @@
 # @guataiba/isac-cli
 
+## 2.0.1
+
+### Patch Changes
+
+- f999471: Read CLI version from package.json instead of hardcoding
+  - @guataiba/isac-core@2.0.1
+  - @guataiba/isac-nextjs@2.0.1
+
 ## 2.0.0
 
 ### Major Changes
