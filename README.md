@@ -1,6 +1,14 @@
-# ISAC — Intelligent Site Analysis & Cloning CLI
+# ISAC — Intelligent Site Analysis & Cloning
 
-ISAC captures screenshots from a URL, extracts the design system, detects animations, plans the page structure, implements a pixel-perfect Next.js replica, and visually verifies the result — all powered by Claude Code.
+ISAC captures screenshots from a URL, extracts the design system, detects animations, plans the page structure, implements a pixel-perfect replica, and visually verifies the result — all powered by Claude Code.
+
+## Packages
+
+| Package | Version | Description |
+|---|---|---|
+| [`@guataiba/isac-cli`](https://www.npmjs.com/package/@guataiba/isac-cli) | [![npm](https://img.shields.io/npm/v/@guataiba/isac-cli)](https://www.npmjs.com/package/@guataiba/isac-cli) | CLI tool (`isac capture <url>`) |
+| [`@guataiba/isac-core`](https://www.npmjs.com/package/@guataiba/isac-core) | [![npm](https://img.shields.io/npm/v/@guataiba/isac-core)](https://www.npmjs.com/package/@guataiba/isac-core) | Framework-agnostic pipeline engine |
+| [`@guataiba/isac-nextjs`](https://www.npmjs.com/package/@guataiba/isac-nextjs) | [![npm](https://img.shields.io/npm/v/@guataiba/isac-nextjs)](https://www.npmjs.com/package/@guataiba/isac-nextjs) | Next.js (App Router) adapter |
 
 ## Prerequisites
 
@@ -57,15 +65,26 @@ isac capture <url>
 6. **Phase 3** — Implementation
 7. **Phase 4** — Visual verification (with correction loop)
 
+## Architecture
+
+```
+packages/
+  core/     → Pipeline engine, prompts, templates (framework-agnostic)
+  nextjs/   → Next.js App Router adapter (prompts, templates, file structure)
+  cli/      → CLI entry point, bundles core + nextjs
+examples/
+  claude-on-mars/  → Complete capture example
+```
+
 ## Example output
 
-See `examples/claude-on-mars/` for a complete capture example.
+See [`examples/claude-on-mars/`](examples/claude-on-mars/) for a complete capture example.
 
 ## Roadmap
 
-- **Multipackage architecture** — Modular rendering engine based on `json-render`, enabling support for multiple frameworks beyond Next.js
-- **Copy HEX on design system page** — Add a click-to-copy button for hex color codes on the generated design system page
+- **Copy HEX on design system page** — Click-to-copy for hex color codes on the generated design system page
 - **Brand logo extraction** — Automatically detect and download the brand's logo from the target URL
+- **More framework adapters** — Astro, Remix, SvelteKit, and others
 - **CLI command evolution** — Evolve CLI commands (e.g. `brand-detector`, framework-specific generators) as the tool matures
 
 ## License
