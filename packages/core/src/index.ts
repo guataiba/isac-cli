@@ -41,6 +41,9 @@ export {
 // ── Utils ───────────────────────────────────────────────────
 export { ensureClaude, getClaudeVersion } from "./utils/claude.js";
 
+// ── Config ─────────────────────────────────────────────────
+export { readConfig, writeConfig, type IsacConfig } from "./config.js";
+
 // ── Templates (framework-agnostic) ─────────────────────────
 export { DESIGN_TOKENS_CSS_TEMPLATE } from "./templates/design-tokens.css.js";
 export { ANIMATION_DETECTION_SCRIPT } from "./templates/animation-detection.js.js";

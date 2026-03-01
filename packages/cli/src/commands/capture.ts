@@ -4,29 +4,11 @@ import {
   ensureClaude,
   printBanner,
   log,
+  readConfig,
   runPipeline,
-  type FrameworkAdapter,
   type PipelineStopAfter,
 } from "@guataiba/isac-core";
-import { nextjsAdapter } from "@guataiba/isac-nextjs";
-
-// ── Adapter registry ────────────────────────────────────────────────
-
-const ADAPTERS: Record<string, FrameworkAdapter> = {
-  nextjs: nextjsAdapter,
-};
-
-function resolveAdapter(name: string): FrameworkAdapter {
-  const adapter = ADAPTERS[name];
-  if (!adapter) {
-    const available = Object.keys(ADAPTERS).join(", ");
-    console.error(
-      chalk.red(`  Error: Unknown framework "${name}". Available: ${available}`),
-    );
-    process.exit(1);
-  }
-  return adapter;
-}
+import { resolveAdapter } from "../adapters.js";
 
 // ── Command ─────────────────────────────────────────────────────────
 
@@ -63,10 +45,13 @@ export async function captureCommand(
     process.exit(1);
   }
 
-  // Resolve adapter
-  const adapter = resolveAdapter(options.framework ?? "nextjs");
-
   const dir = resolve(options.dir ?? process.cwd());
+
+  // Load project config (if exists)
+  const config = readConfig(dir);
+
+  // Resolve adapter (CLI flag > config > default)
+  const adapter = resolveAdapter(options.framework ?? config?.framework ?? "nextjs");
   const maxRetries = options.maxRetries ?? 3;
   const skipAnimations = options.skipAnimations ?? false;
 
