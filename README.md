@@ -118,7 +118,6 @@ See [`examples/claude-on-mars/`](examples/claude-on-mars/) for a complete captur
 
 - **More framework adapters** — Astro, Remix, SvelteKit, and others
 - **Copy HEX on design system page** — Click-to-copy for hex color codes
-- **Brand logo extraction** — Automatically detect and download the brand's logo
 - **CLI command evolution** — Evolve CLI commands as the tool matures
 
 ## License
