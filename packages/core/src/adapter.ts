@@ -124,6 +124,13 @@ export interface FrameworkAdapter {
    */
   getDesignSystemDataTemplate(): string;
 
+  /**
+   * Returns the stub data.ts template file, written only during pre-flight
+   * so that page.tsx compiles before Phase 1B generates real data.
+   * NOT included in getDesignSystemTemplates() to avoid overwriting Phase 1B output.
+   */
+  getStubDataTemplate(): TemplateFile;
+
   // ─── Validation ─────────────────────────────────────────
 
   /**

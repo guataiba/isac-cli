@@ -2,46 +2,71 @@ import chalk from "chalk";
 
 // ── State ────────────────────────────────────────────────────────────
 let currentPhase = "";
-let toolCounts: Record<string, number> = {};
+let currentTool = "";
 let animTimer: ReturnType<typeof setInterval> | null = null;
-let blockPos = 0;
-let direction = 1;
+let spinnerFrame = 0;
 let phaseStart = 0;
 let phaseCostUsd = 0;
 let totalCostUsd = 0;
+let toolCounts: Record<string, number> = {};
 
-const TRACK_WIDTH = 16;
-const BLOCK_WIDTH = 4;
-const BLOCK_CHAR = "█";
-const BG_CHAR = "░";
+const SPINNER = ["\u28CB", "\u28D9", "\u28F9", "\u28F8", "\u28FC", "\u28F4", "\u28E6", "\u28E7", "\u28C7", "\u28CF"];
 const INTERVAL_MS = 80;
+
+// ── Helpers ──────────────────────────────────────────────────────────
+function getWidth(): number {
+  return process.stdout.columns ?? 80;
+}
+
+function stripAnsi(str: string): string {
+  // eslint-disable-next-line no-control-regex
+  return str.replace(/\x1b\[[0-9;]*m/g, "");
+}
+
+function truncateLine(str: string, max: number): string {
+  const plain = stripAnsi(str);
+  if (plain.length <= max) return str;
+
+  // Walk through string tracking visible chars
+  let visible = 0;
+  let i = 0;
+  while (i < str.length && visible < max - 1) {
+    if (str[i] === "\x1b") {
+      const end = str.indexOf("m", i);
+      if (end !== -1) {
+        i = end + 1;
+        continue;
+      }
+    }
+    visible++;
+    i++;
+  }
+  return str.slice(0, i) + "\x1b[0m";
+}
+
+function formatElapsed(ms: number): string {
+  const secs = Math.floor(ms / 1000);
+  if (secs < 60) return `${secs}s`;
+  const mins = Math.floor(secs / 60);
+  const remainSecs = secs % 60;
+  return `${mins}m${remainSecs.toString().padStart(2, "0")}s`;
+}
 
 // ── Rendering ────────────────────────────────────────────────────────
 function renderFrame() {
-  const track =
-    BG_CHAR.repeat(blockPos) +
-    BLOCK_CHAR.repeat(BLOCK_WIDTH) +
-    BG_CHAR.repeat(TRACK_WIDTH - BLOCK_WIDTH - blockPos);
+  const frame = chalk.cyan(SPINNER[spinnerFrame % SPINNER.length]);
+  spinnerFrame++;
 
-  const cost = `$${phaseCostUsd.toFixed(2)}`;
-  const line = `  ${chalk.cyan(track)}  ${chalk.dim(currentPhase)}  ${chalk.dim(cost)}`;
-  process.stdout.write(`\r\x1b[K${line}`);
+  const elapsed = formatElapsed(Date.now() - phaseStart);
+  const tool = currentTool ? chalk.dim(` \u00b7 ${currentTool}`) : "";
+  const line = `  ${frame} ${currentPhase}${tool} ${chalk.dim(`(${elapsed})`)}`;
 
-  // Ping-pong
-  blockPos += direction;
-  if (blockPos >= TRACK_WIDTH - BLOCK_WIDTH) {
-    blockPos = TRACK_WIDTH - BLOCK_WIDTH;
-    direction = -1;
-  } else if (blockPos <= 0) {
-    blockPos = 0;
-    direction = 1;
-  }
+  process.stdout.write(`\r\x1b[K${truncateLine(line, getWidth() - 1)}`);
 }
 
 function startAnimation() {
   stopAnimation();
-  blockPos = 0;
-  direction = 1;
+  spinnerFrame = 0;
   animTimer = setInterval(renderFrame, INTERVAL_MS);
 }
 
@@ -50,20 +75,28 @@ function stopAnimation() {
     clearInterval(animTimer);
     animTimer = null;
   }
-  // Clear the line
   process.stdout.write("\r\x1b[K");
+}
+
+// ── Safe logging (interleaves with spinner without breaking it) ──────
+export function logLine(text: string) {
+  if (animTimer) {
+    process.stdout.write("\r\x1b[K");
+    console.log(text);
+    renderFrame();
+  } else {
+    console.log(text);
+  }
 }
 
 // ── Public API ───────────────────────────────────────────────────────
 export function setPhase(phaseName: string) {
   if (animTimer) {
-    // Auto-succeed previous phase
-    const elapsed = formatElapsed(Date.now() - phaseStart);
     stopAnimation();
-    console.log(chalk.green(`  ✓ ${currentPhase} (${elapsed} — $${phaseCostUsd.toFixed(2)})`));
   }
 
   currentPhase = phaseName;
+  currentTool = "";
   toolCounts = {};
   phaseCostUsd = 0;
   phaseStart = Date.now();
@@ -77,14 +110,16 @@ export function updateStatus(text: string) {
 export function succeedPhase(message?: string) {
   const elapsed = formatElapsed(Date.now() - phaseStart);
   const label = message ?? currentPhase;
+  const cost = phaseCostUsd > 0 ? ` \u00b7 $${phaseCostUsd.toFixed(2)}` : "";
   stopAnimation();
-  console.log(chalk.green(`  ✓ ${label} (${elapsed} — $${phaseCostUsd.toFixed(2)})`));
+  console.log(chalk.green(`  \u2713 ${label}`) + chalk.dim(` (${elapsed}${cost})`));
 }
 
 export function failPhase(message?: string) {
   const label = message ?? `${currentPhase} failed`;
+  const cost = phaseCostUsd > 0 ? ` \u00b7 $${phaseCostUsd.toFixed(2)}` : "";
   stopAnimation();
-  console.log(chalk.red(`  ✗ ${label} ($${phaseCostUsd.toFixed(2)})`));
+  console.log(chalk.red(`  \u2717 ${label}`) + chalk.dim(`${cost}`));
 }
 
 export function renderEvent(event: Record<string, unknown>) {
@@ -96,8 +131,11 @@ export function renderEvent(event: Record<string, unknown>) {
     const toolName = (event.tool_name as string) ?? "unknown";
     toolCounts[toolName] = (toolCounts[toolName] ?? 0) + 1;
 
-    const shortName = toolName.replace("mcp__chrome-devtools__", "chrome:");
-    currentPhase = `${currentPhase.split(" — ")[0]} — ${shortName}`;
+    // Shorten tool names for display
+    currentTool = toolName
+      .replace("mcp__chrome-devtools__", "")
+      .replace("computer:", "")
+      .replace("mcp__", "");
   }
 
   if (type === "result") {
@@ -106,17 +144,15 @@ export function renderEvent(event: Record<string, unknown>) {
       phaseCostUsd = cost;
       totalCostUsd += cost;
     }
-
-    const text = (event.result as string) ?? "";
-    if (text.length > 100) {
-      currentPhase = `${currentPhase.split(" — ")[0]} — processing result...`;
-    }
+    currentTool = "";
   }
 }
 
 export function renderToolUse(toolName: string) {
-  const shortName = toolName.replace("mcp__chrome-devtools__", "chrome:");
-  currentPhase = `${currentPhase.split(" — ")[0]} — ${shortName}`;
+  currentTool = toolName
+    .replace("mcp__chrome-devtools__", "")
+    .replace("computer:", "")
+    .replace("mcp__", "");
 }
 
 export function getToolCounts(): Record<string, number> {
@@ -129,13 +165,4 @@ export function getTotalCost(): number {
 
 export function stopSpinner() {
   stopAnimation();
-}
-
-// ── Helpers ──────────────────────────────────────────────────────────
-function formatElapsed(ms: number): string {
-  const secs = Math.floor(ms / 1000);
-  if (secs < 60) return `${secs}s`;
-  const mins = Math.floor(secs / 60);
-  const remainSecs = secs % 60;
-  return `${mins}m ${remainSecs}s`;
 }

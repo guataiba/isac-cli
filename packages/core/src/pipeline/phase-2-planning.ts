@@ -11,7 +11,6 @@ export async function runPhase2(
   ctx: PipelineContext,
   onEvent?: (event: Record<string, unknown>) => void,
 ): Promise<Phase2Result> {
-  log.phase("2", "Planning page structure...");
   const start = Date.now();
 
   try {
@@ -21,8 +20,9 @@ export async function runPhase2(
         prompt: ctx.adapter.getPagePlannerPrompt(ctx.screenshotDir),
         allowedTools: [...PHASE_2_TOOLS],
         model: "claude-sonnet-4-6",
-        timeout: 300_000,
+        timeout: 180_000,
         maxTurns: 15,
+        activityTimeout: 180_000, // analyzes screenshots + plans layout — long thinking pauses
       },
       ctx.cwd,
       ctx.sessionId,

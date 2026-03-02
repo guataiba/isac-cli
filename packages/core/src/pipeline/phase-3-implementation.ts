@@ -10,10 +10,6 @@ export async function runPhase3(
   corrections?: string,
   onEvent?: (event: Record<string, unknown>) => void,
 ): Promise<PhaseResult> {
-  const label = corrections
-    ? "Applying corrections..."
-    : "Implementing page...";
-  log.phase("3", label);
   const start = Date.now();
 
   try {

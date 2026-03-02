@@ -36,26 +36,50 @@ export async function runClaudePhase(
 
   return new Promise<PhaseOutput>((resolve, reject) => {
     const timeout = config.timeout ?? 600_000; // 10 min default
+    const startupTimeout = 120_000; // 120s for initial startup (MCP + Chrome can be slow)
+    const activityTimeout = config.activityTimeout ?? 120_000; // rolling silence — API calls with thinking can take 60s+
     let sessionId = resumeSessionId ?? "";
     let lastResult = "";
     let isError = false;
     let costUsd: number | undefined;
+    let gotActivity = false;
 
     const proc = spawn("claude", args, {
       cwd,
-      stdio: ["pipe", "pipe", "pipe"],
+      stdio: ["ignore", "pipe", "pipe"],
       env: { ...process.env },
     });
 
-    // Set timeout
+    // Overall timeout
     const timer = setTimeout(() => {
       proc.kill("SIGTERM");
-      reject(new Error(`Phase "${config.name}" timed out after ${timeout}ms`));
+      const hint = gotActivity
+        ? ""
+        : "\nHint: No events received — the CLI may be stuck on a prompt or MCP connection.";
+      reject(new Error(
+        `Phase "${config.name}" timed out after ${timeout}ms${hint}\nstderr: ${stderrOutput.slice(-500)}`,
+      ));
     }, timeout);
+
+    // Activity timeout — resets on each stdout chunk.
+    // 120s covers both MCP startup and API response latency (thinking can take 60s+).
+    const onStall = () => {
+      proc.kill("SIGTERM");
+      const stage = gotActivity ? activityTimeout : startupTimeout;
+      reject(new Error(
+        `Phase "${config.name}" — no output from CLI after ${stage / 1000}s. ` +
+        `The subprocess may be waiting for input or failing to connect.\n` +
+        `stderr: ${stderrOutput.slice(-500)}`,
+      ));
+    };
+    let activityTimer = setTimeout(onStall, startupTimeout);
 
     let buffer = "";
 
     proc.stdout.on("data", (data: Buffer) => {
+      gotActivity = true;
+      clearTimeout(activityTimer);
+      activityTimer = setTimeout(onStall, activityTimeout);
       buffer += data.toString();
       const lines = buffer.split("\n");
       buffer = lines.pop() ?? "";
@@ -98,6 +122,7 @@ export async function runClaudePhase(
 
     proc.on("close", (code) => {
       clearTimeout(timer);
+      clearTimeout(activityTimer);
 
       // Process remaining buffer
       if (buffer.trim()) {
@@ -136,6 +161,7 @@ export async function runClaudePhase(
 
     proc.on("error", (err) => {
       clearTimeout(timer);
+      clearTimeout(activityTimer);
       reject(
         new Error(
           `Failed to spawn claude for phase "${config.name}": ${err.message}`,

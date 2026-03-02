@@ -1,43 +1,33 @@
 import chalk from "chalk";
-
-const PHASE_ICONS: Record<string, string> = {
-  "phase-0": "📸",
-  "phase-1a": "🎨",
-  "phase-1b": "📖",
-  "phase-1c": "✨",
-  "phase-2": "📐",
-  "phase-3": "🔨",
-  "phase-4": "🔍",
-};
+import { logLine } from "./tui.js";
 
 export const log = {
   phase(num: string, label: string) {
-    const icon = PHASE_ICONS[`phase-${num}`] ?? "●";
-    console.log(`\n  ${icon} ${chalk.bold(`Phase ${num}`)}: ${label}`);
+    logLine(`\n  ${chalk.bold.dim(`Phase ${num}`)}: ${label}`);
   },
 
   success(msg: string) {
-    console.log(`    ${chalk.green("✓")} ${msg}`);
+    logLine(`    ${chalk.green("\u2713")} ${msg}`);
   },
 
   error(msg: string) {
-    console.log(`    ${chalk.red("✗")} ${msg}`);
+    logLine(`    ${chalk.red("\u2717")} ${msg}`);
   },
 
   warn(msg: string) {
-    console.log(`    ${chalk.yellow("⚠")} ${msg}`);
+    logLine(`    ${chalk.yellow("!")} ${msg}`);
   },
 
   info(msg: string) {
-    console.log(`    ${chalk.dim(msg)}`);
+    logLine(`    ${chalk.dim(msg)}`);
   },
 
   divider() {
-    console.log(`\n  ${"─".repeat(37)}`);
+    logLine(`\n  ${"\u2500".repeat(37)}`);
   },
 
   summary(label: string, value: string) {
-    console.log(`  ${chalk.dim(label + ":")} ${value}`);
+    logLine(`  ${chalk.dim(label + ":")} ${value}`);
   },
 
   elapsed(startMs: number) {

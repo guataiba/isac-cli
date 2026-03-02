@@ -7,7 +7,6 @@ export async function runPhase1a(
   ctx: PipelineContext,
   onEvent?: (event: Record<string, unknown>) => void,
 ): Promise<PhaseResult> {
-  log.phase("1a", "Extracting design tokens...");
   const start = Date.now();
 
   try {
@@ -17,8 +16,9 @@ export async function runPhase1a(
         prompt: ctx.adapter.getTokenExtractionPrompt(ctx.screenshotDir, ctx.url),
         allowedTools: [...PHASE_1A_TOOLS],
         model: "claude-sonnet-4-6",
-        timeout: 300_000,
-        maxTurns: 20,
+        timeout: 180_000,
+        maxTurns: 25,
+        activityTimeout: 180_000, // visual analysis of screenshots requires long thinking pauses
       },
       ctx.cwd,
       ctx.sessionId,

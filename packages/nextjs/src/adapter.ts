@@ -39,7 +39,7 @@ function normalizeFontVars(css: string): string {
 
 // ── Fallback data.ts generator ──────────────────────────────────────
 
-function generateFallbackDataTs(css: string, url: string): string {
+function generateFallbackDataTs(css: string, url: string, cwd?: string): string {
   let domain = "example.com";
   let name = "Example Site";
   try {
@@ -115,11 +115,57 @@ function generateFallbackDataTs(css: string, url: string): string {
     .filter(([, tokens]) => tokens.length > 0)
     .map(([category, tokens]) => ({ category, tokens }));
 
+  // Try reading brand data for real site info
+  let tagline = "";
+  let description = "";
+  let logoUrl = "";
+  let faviconUrl = "";
+  let ogImageUrl = "";
+  let aboutText = "";
+  try {
+    const brandDir = cwd ? join(cwd, ".claude/branding") : "";
+    const brandPath = brandDir ? join(brandDir, "brand-data.json") : "";
+    if (brandPath && existsSync(brandPath)) {
+      const brand = JSON.parse(readFileSync(brandPath, "utf-8"));
+      if (brand.companyName) name = brand.companyName;
+      tagline = brand.tagline ?? "";
+      description = brand.description ?? "";
+      logoUrl = brand.logoUrl ?? "";
+      faviconUrl = brand.faviconUrl ?? "";
+      ogImageUrl = brand.ogImageUrl ?? "";
+      aboutText = brand.aboutText ?? "";
+    }
+  } catch { /* ignore */ }
+
+  // Try reading icon data
+  let iconLibrary = "none";
+  let iconNames: string[] = [];
+  let iconCount = 0;
+  try {
+    const iconPath = cwd ? join(cwd, ".claude/icons/icon-data.json") : "";
+    if (iconPath && existsSync(iconPath)) {
+      const iconData = JSON.parse(readFileSync(iconPath, "utf-8"));
+      iconLibrary = iconData.library ?? "none";
+      iconNames = iconData.icons ?? [];
+      iconCount = iconData.count ?? 0;
+    }
+  } catch { /* ignore */ }
+
   return `// Auto-generated from globals.css — design system token data
 // ─── Site Info ──────────────────────────────────────────────────
 export const siteInfo = {
   name: ${JSON.stringify(name)},
   domain: ${JSON.stringify(domain)},
+  tagline: ${JSON.stringify(tagline)},
+  description: ${JSON.stringify(description)},
+};
+
+// ─── Branding ───────────────────────────────────────────────────
+export const branding = {
+  logoUrl: ${JSON.stringify(logoUrl)},
+  faviconUrl: ${JSON.stringify(faviconUrl)},
+  ogImageUrl: ${JSON.stringify(ogImageUrl)},
+  aboutText: ${JSON.stringify(aboutText)},
 };
 
 // ─── Typography ─────────────────────────────────────────────────
@@ -162,6 +208,13 @@ export const radii: { label: string; value: string }[] = [
 
 // ─── Shadows ────────────────────────────────────────────────────
 export const shadows: { label: string; var: string; value: string }[] = ${JSON.stringify(shadowItems, null, 2)};
+
+// ─── Icons ─────────────────────────────────────────────────────
+export const icons: { library: string; names: string[]; count: number } = {
+  library: ${JSON.stringify(iconLibrary)},
+  names: ${JSON.stringify(iconNames)},
+  count: ${iconCount},
+};
 
 // ─── Primitive Palette ──────────────────────────────────────────
 export const primitives: { name: string; var: string; hex: string }[] = ${JSON.stringify(primitives, null, 2)};
@@ -264,7 +317,14 @@ export const nextjsAdapter: FrameworkAdapter = {
       { path: "app/design-system/layout.tsx", content: DESIGN_SYSTEM_LAYOUT_TEMPLATE },
       { path: "app/design-system/components/theme-toggle.tsx", content: THEME_TOGGLE_TEMPLATE },
       { path: "app/components/theme-toggle.tsx", content: THEME_TOGGLE_TEMPLATE },
+      // NOTE: data.ts is NOT included here — it's written as a stub in pre-flight
+      // and then overwritten by Phase 1B with real data. Including it here would
+      // cause the post-phase writeDesignSystemTemplates() to overwrite Phase 1B's output.
     ];
+  },
+
+  getStubDataTemplate(): TemplateFile {
+    return { path: "app/design-system/data.ts", content: DESIGN_SYSTEM_DATA_TEMPLATE };
   },
 
   getDesignTokensCssTemplate(): string {
@@ -357,7 +417,7 @@ export const nextjsAdapter: FrameworkAdapter = {
     if (!existsSync(globalsPath)) return;
 
     const css = readFileSync(globalsPath, "utf-8");
-    const fallback = generateFallbackDataTs(css, url);
+    const fallback = generateFallbackDataTs(css, url, cwd);
     mkdirSync(dirname(dsDataPath), { recursive: true });
     writeFileSync(dsDataPath, fallback, "utf-8");
   },

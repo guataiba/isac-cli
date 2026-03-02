@@ -7,7 +7,6 @@ export async function runPhase1b(
   ctx: PipelineContext,
   onEvent?: (event: Record<string, unknown>) => void,
 ): Promise<PhaseResult> {
-  log.phase("1b", "Building design system docs...");
   const start = Date.now();
 
   try {
@@ -17,8 +16,9 @@ export async function runPhase1b(
         prompt: ctx.adapter.getDesignSystemPrompt(ctx.screenshotDir),
         allowedTools: [...PHASE_1B_TOOLS],
         model: "claude-sonnet-4-6",
-        timeout: 300_000,
+        timeout: 180_000,
         maxTurns: 20,
+        activityTimeout: 180_000, // reads screenshots + generates data.ts — long thinking pauses
       },
       ctx.cwd,
       ctx.sessionId,

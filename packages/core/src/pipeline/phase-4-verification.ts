@@ -11,7 +11,6 @@ export async function runPhase4(
   ctx: PipelineContext,
   onEvent?: (event: Record<string, unknown>) => void,
 ): Promise<Phase4Result> {
-  log.phase("4", "Visual verification...");
   const start = Date.now();
 
   try {
@@ -21,7 +20,7 @@ export async function runPhase4(
         prompt: ctx.adapter.getVisualVerifierPrompt(ctx.screenshotDir),
         allowedTools: [...PHASE_4_TOOLS],
         model: "claude-sonnet-4-6",
-        timeout: 300_000,
+        timeout: 120_000,
         maxTurns: 20,
       },
       ctx.cwd,

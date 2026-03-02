@@ -13,6 +13,8 @@ Read \`app/globals.css\`, parse ALL CSS custom properties, and write \`app/desig
 
 - \`app/globals.css\` — already populated with primitive (\`--sf-*\`), semantic (\`--color-*\`), font (\`--font-*\`), spacing, and dark mode tokens
 - Screenshots in \`${screenshotDir}\` — visual reference for typography and site info
+- \`.claude/branding/brand-data.json\` — brand identity data (company name, tagline, description, logo/favicon URLs)
+- \`.claude/icons/icon-data.json\` — detected icon library and icon names
 
 ## Process
 
@@ -25,11 +27,20 @@ Read \`app/globals.css\`, parse ALL CSS custom properties, and write \`app/desig
    - \`--shadow-*\` shadow values if defined
    - \`--radius-*\` border-radius values if defined
 
-2. **Read screenshots** in \`${screenshotDir}\` to determine:
-   - Site name and domain
+2. **Read \`.claude/branding/brand-data.json\`** (if it exists) to populate:
+   - \`siteInfo.name\`: use \`companyName\` from brand data
+   - \`siteInfo.tagline\`: use \`tagline\` from brand data
+   - \`siteInfo.description\`: use \`description\` from brand data
+   - \`branding.logoUrl\`: use \`logoUrl\` from brand data
+   - \`branding.faviconUrl\`: use \`faviconUrl\` from brand data
+   - \`branding.ogImageUrl\`: use \`ogImageUrl\` from brand data
+   - \`branding.aboutText\`: use \`aboutText\` from brand data
+
+3. **Read screenshots** in \`${screenshotDir}\` to determine:
+   - Site name and domain (fallback if brand-data.json is missing)
    - Font sizes observed (map to a scale)
 
-3. **Write \`app/design-system/data.ts\`** following this exact schema:
+4. **Write \`app/design-system/data.ts\`** following this exact schema:
 
 \`\`\`typescript
 ${DESIGN_SYSTEM_DATA_TEMPLATE}
@@ -47,5 +58,13 @@ ${DESIGN_SYSTEM_DATA_TEMPLATE}
 - **shadows**: if \`--shadow-*\` vars exist in globals.css, populate the \`shadows\` array with label, var, and the full shadow value
 - **Do NOT modify** any other file — do not touch globals.css, page.tsx, or any other file
 - **Do NOT run** npm commands — no \`npm run build\`, no \`npm test\`, no \`npm install\`
-- **Export everything**: all constants must be exported with \`export const\``;
+- **Export everything**: all constants must be exported with \`export const\`
+- **siteInfo**: populate \`name\`, \`tagline\`, and \`description\` from brand-data.json. Use real values, NOT "Example Site"
+- **branding**: populate \`logoUrl\`, \`faviconUrl\`, \`ogImageUrl\`, and \`aboutText\` from brand-data.json. Use real URLs from the site
+
+5. **Read \`.claude/icons/icon-data.json\`** (if it exists) to populate:
+   - \`icons.library\`: the detected icon library name (e.g., "lucide", "font-awesome", "heroicons", or "none")
+   - \`icons.names\`: array of detected icon names
+   - \`icons.count\`: total number of icon elements found
+- **icons**: populate \`library\`, \`names\`, and \`count\` from icon-data.json. If the file doesn't exist, leave defaults ("none", [], 0)`;
 }
