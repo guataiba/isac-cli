@@ -1,6 +1,6 @@
 # ISAC — Intelligent Site Analysis & Cloning
 
-ISAC captures screenshots from a URL, extracts the design system, detects animations, plans the page structure, implements a pixel-perfect replica, and visually verifies the result — all powered by Claude Code.
+ISAC captures a live website, extracts its complete design system (fonts, colors, tokens, branding), and optionally generates a pixel-perfect Next.js replica — all powered by Claude Code.
 
 ## Packages
 
@@ -25,10 +25,28 @@ npm install -g @guataiba/isac-cli
 
 ## Usage
 
-Inside a Next.js project, run:
+### Design system extraction (default)
+
+Inside a Next.js project:
 
 ```bash
 isac capture <url>
+```
+
+This extracts fonts, colors, branding, and icons from the target URL, generates `globals.css` with design tokens, and builds a visual design system documentation page.
+
+### Full page replication
+
+```bash
+isac capture <url> --replicate
+```
+
+Goes further: captures full-page screenshots, plans the page structure, implements a pixel-perfect replica, and visually verifies the result.
+
+### Interactive setup
+
+```bash
+isac start
 ```
 
 ### Options
@@ -36,40 +54,56 @@ isac capture <url>
 | Flag | Description |
 |---|---|
 | `-d, --dir <path>` | Target directory (defaults to cwd) |
-| `--skip-animations` | Skip animation detection phase |
+| `--replicate` | Full page replication mode (screenshots + implementation) |
+| `--framework <name>` | Framework adapter (default: `nextjs`) |
 | `--max-retries <n>` | Max verification retries (default: 3) |
-| `--only-design-system` | Stop after building the design system |
 | `--stop-after <phase>` | Stop after: `screenshots`, `design-system`, or `planning` |
 
 ## What it produces
 
+### Extracted data (`.claude/`)
+
 | File | Description |
 |---|---|
-| `.claude/screenshots/` | Reference screenshots (light + dark) |
-| `app/globals.css` | CSS custom properties (primitive + semantic tokens, dark mode) |
+| `.claude/fonts/font-data.json` | Font families, weights, and roles |
+| `.claude/colors/color-data.json` | Light mode color palette |
+| `.claude/colors/color-data-dark.json` | Dark mode color palette |
+| `.claude/branding/brand-data.json` | Company name, tagline, logo URL |
+| `.claude/icons/icon-data.json` | Icon library and detected icons |
+| `.claude/screenshots/` | Reference screenshots (replicate mode) |
+
+### Generated files
+
+| File | Description |
+|---|---|
+| `app/globals.css` | CSS custom properties (primitives `--sf-*`, semantics `--color-*`, dark mode, Tailwind v4 bridge) |
 | `app/design-system/page.tsx` | Visual design system documentation |
+| `app/design-system/data.ts` | Design token data (parsed from globals.css) |
 | `app/design-system/layout.tsx` | Layout wrapper |
 | `app/design-system/components/theme-toggle.tsx` | Theme toggle component |
 | `app/components/theme-toggle.tsx` | Theme toggle for main page |
-| `.claude/animations/catalog.json` | Animation catalog with Motion.dev mappings |
-| `app/page.tsx` | The replicated page |
-| `app/layout.tsx` | Updated layout with metadata and fonts |
+| `public/fonts/*.woff2` | Downloaded web fonts |
+| `app/page.tsx` | Replicated page (replicate mode only) |
 
 ## Pipeline phases
 
-1. **Phase 0** — Screenshot capture (chrome-devtools)
-2. **Phase 1a** — CSS token extraction
-3. **Phase 1b** — Design system documentation
-4. **Phase 1c** — Animation detection
-5. **Phase 2** — Page structure planning
-6. **Phase 3** — Implementation
-7. **Phase 4** — Visual verification (with correction loop)
+| Phase | What it does | Powered by |
+|---|---|---|
+| **Phase 0** | Navigate to URL, extract fonts/colors/branding/icons, download woff2 files | Claude + Chrome DevTools MCP |
+| **Phase 1A** | Generate `globals.css` from extracted JSON data | Pure TypeScript (no LLM) |
+| **Phase 1B** | Build design system documentation (`data.ts`) | Claude |
+| **Phase 2** | Plan page structure from screenshots | Claude |
+| **Phase 3** | Implement the page | Claude |
+| **Phase 4** | Visual verification with correction loop | Claude + Chrome DevTools MCP |
+
+In **design-system** mode (default), the pipeline runs Phase 0 → 1A → 1B and stops.
+In **replicate** mode, it runs all phases (0 → 1A → 1B+2 → 3 → 4).
 
 ## Architecture
 
 ```
 packages/
-  core/     → Pipeline engine, prompts, templates (framework-agnostic)
+  core/     → Pipeline engine, css-generator, prompts, templates (framework-agnostic)
   nextjs/   → Next.js App Router adapter (prompts, templates, file structure)
   cli/      → CLI entry point, bundles core + nextjs
 examples/
@@ -82,10 +116,10 @@ See [`examples/claude-on-mars/`](examples/claude-on-mars/) for a complete captur
 
 ## Roadmap
 
-- **Copy HEX on design system page** — Click-to-copy for hex color codes on the generated design system page
-- **Brand logo extraction** — Automatically detect and download the brand's logo from the target URL
 - **More framework adapters** — Astro, Remix, SvelteKit, and others
-- **CLI command evolution** — Evolve CLI commands (e.g. `brand-detector`, framework-specific generators) as the tool matures
+- **Copy HEX on design system page** — Click-to-copy for hex color codes
+- **Brand logo extraction** — Automatically detect and download the brand's logo
+- **CLI command evolution** — Evolve CLI commands as the tool matures
 
 ## License
 
