@@ -5,6 +5,7 @@ export type { FrameworkAdapter, TemplateFile, PhaseValidation } from "./adapter.
 export { runPipeline } from "./pipeline/orchestrator.js";
 export type {
   PipelineContext,
+  PipelineMode,
   PipelineStopAfter,
   PhaseConfig,
   PhaseOutput,
@@ -35,6 +36,8 @@ export {
   renderEvent,
   stopSpinner,
   getTotalCost,
+  logLine,
+  updateStatus,
 } from "./ui/tui.js";
 
 // ── Utils ───────────────────────────────────────────────────

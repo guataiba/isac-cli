@@ -1,25 +1,17 @@
-export function getScreenshotPrompt(url: string): string {
-  return `You are an agent specialized in capturing web page screenshots and extracting font data.
+import type { PipelineMode } from "../pipeline/types.js";
 
-## Your mission
+// ── Shared prompt sections ──────────────────────────────────────────
 
-Navigate to the provided URL, wait for full page load, capture full-page screenshots, and extract font information from the live page.
+function getNavigationSection(url: string): string {
+  return `## PART 1 — NAVIGATE & WAIT
 
-## Target URL
+1. **Navigate** to ${url} using \`navigate_page\`
+2. **Wait** for complete load using \`wait_for\` (networkIdle or load event)
+3. **Resize** the viewport to 1440px width using \`resize_page\` (desktop standard)`;
+}
 
-${url}
-
-## CRITICAL RULES
-
-- You have access to Read, Write, Bash, and chrome-devtools MCP tools
-- Do NOT modify any project source files (package.json, test files, tsconfig, etc.)
-- Do NOT install any packages or commit to git
-- ONLY write files to \`.claude/screenshots/\`, \`.claude/fonts/\`, \`.claude/branding/\`, \`.claude/icons/\`, and \`public/fonts/\`
-- The output directories already exist — do not try to create them
-- Font extraction is best-effort. If any font step fails, write what you have and continue.
-- Brand extraction is best-effort. If any brand step fails, write what you have and continue.
-
-## PART 1 — SCREENSHOTS
+function getScreenshotSection(url: string): string {
+  return `## PART 1 — SCREENSHOTS
 
 1. **Navigate** to ${url} using \`navigate_page\`
 2. **Wait** for complete load using \`wait_for\` (networkIdle or load event)
@@ -34,13 +26,15 @@ ${url}
 6. **Capture individual sections** if the page is long:
    - Identify main sections via \`take_snapshot\` (DOM inspection)
    - Capture each section as an individual screenshot if needed
-   - Name them \`section-1.png\`, \`section-2.png\`, etc.
+   - Name them \`section-1.png\`, \`section-2.png\`, etc.`;
+}
 
-## PART 2 — FONT EXTRACTION (after screenshots, while the page is still open)
+function getFontExtractionSection(url: string, partNumber: number): string {
+  return `## PART ${partNumber} — FONT EXTRACTION (while the page is still open)
 
 You MUST try ALL strategies below in order. Many sites block CSSFontFaceRule enumeration (CORS), so the fallbacks are critical.
 
-### Step 2.1: Strategy A — Extract @font-face declarations via CSSFontFaceRule
+### Step ${partNumber}.1: Strategy A — Extract @font-face declarations via CSSFontFaceRule
 
 Call \`mcp__chrome-devtools__evaluate_script\` with this exact script:
 
@@ -67,9 +61,9 @@ Call \`mcp__chrome-devtools__evaluate_script\` with this exact script:
 }
 \`\`\`
 
-### Step 2.2: Strategy B — Font Loading API (fallback if Strategy A returns empty)
+### Step ${partNumber}.2: Strategy B — Font Loading API (fallback if Strategy A returns empty)
 
-If step 2.1 returned an empty array, try the Font Loading API:
+If step ${partNumber}.1 returned an empty array, try the Font Loading API:
 
 \`\`\`
 () => {
@@ -87,7 +81,7 @@ If step 2.1 returned an empty array, try the Font Loading API:
 }
 \`\`\`
 
-### Step 2.3: Strategy C — Google Fonts link tag detection
+### Step ${partNumber}.3: Strategy C — Google Fonts link tag detection
 
 \`\`\`
 () => {
@@ -108,7 +102,7 @@ If step 2.1 returned an empty array, try the Font Loading API:
 }
 \`\`\`
 
-### Step 2.4: Detect which font is used for each role (always run this)
+### Step ${partNumber}.4: Detect which font is used for each role (always run this)
 
 Call \`mcp__chrome-devtools__evaluate_script\` with:
 
@@ -123,7 +117,7 @@ Call \`mcp__chrome-devtools__evaluate_script\` with:
 }
 \`\`\`
 
-### Step 2.5: Download font files
+### Step ${partNumber}.5: Download font files
 
 Run via Bash:
 
@@ -131,13 +125,13 @@ Run via Bash:
 mkdir -p public/fonts
 \`\`\`
 
-Then for each unique font URL from steps 2.1–2.3 that has a downloadable URL, download the woff2 file:
+Then for each unique font URL from steps ${partNumber}.1–${partNumber}.3 that has a downloadable URL, download the woff2 file:
 
 \`\`\`bash
 curl -sL -H "Referer: ${url}" -o "public/fonts/{familyName}.woff2" "{url}"
 \`\`\`
 
-### Step 2.6: Validate font downloads
+### Step ${partNumber}.6: Validate font downloads
 
 \`\`\`bash
 file public/fonts/*.woff2
@@ -145,7 +139,7 @@ file public/fonts/*.woff2
 
 If any file shows "HTML" instead of "Web Open Font Format", delete it.
 
-### Step 2.7: Write font-data.json — THIS IS MANDATORY
+### Step ${partNumber}.7: Write font-data.json — THIS IS MANDATORY
 
 **YOU MUST ALWAYS WRITE THIS FILE**, even if all font strategies returned empty arrays.
 
@@ -161,15 +155,17 @@ Write the file \`.claude/fonts/font-data.json\` with this structure:
 \`\`\`
 
 - \`fontFaces\`: merge results from strategies A, B, and C (deduplicate by family+weight)
-- \`roles\`: the object from step 2.4
+- \`roles\`: the object from step ${partNumber}.4
 
-**CRITICAL**: You MUST write \`.claude/fonts/font-data.json\` no matter what. If \`fontFaces\` is empty, write it with an empty array. If \`roles\` extraction failed, write it with default values. The downstream pipeline DEPENDS on this file existing. Do NOT skip this step.
+**CRITICAL**: You MUST write \`.claude/fonts/font-data.json\` no matter what. If \`fontFaces\` is empty, write it with an empty array. If \`roles\` extraction failed, write it with default values. The downstream pipeline DEPENDS on this file existing. Do NOT skip this step.`;
+}
 
-## PART 3 — BRAND IDENTITY (after fonts, while the page is still open)
+function getBrandSection(partNumber: number): string {
+  return `## PART ${partNumber} — BRAND IDENTITY (while the page is still open)
 
 Extract branding and identity information for the design system.
 
-### Step 3.1: Extract meta tags from current page
+### Step ${partNumber}.1: Extract meta tags from current page
 
 Call \`mcp__chrome-devtools__evaluate_script\` with:
 
@@ -200,11 +196,11 @@ Call \`mcp__chrome-devtools__evaluate_script\` with:
 }
 \`\`\`
 
-### Step 3.2: About page
+### Step ${partNumber}.2: About page
 
 Do NOT navigate to other pages — use only meta tags from the current page. Set \`aboutText\` to empty string.
 
-### Step 3.3: Write brand-data.json — THIS IS MANDATORY
+### Step ${partNumber}.3: Write brand-data.json — THIS IS MANDATORY
 
 **YOU MUST ALWAYS WRITE THIS FILE**, even if most fields are null.
 
@@ -222,7 +218,7 @@ Write the file \`.claude/branding/brand-data.json\` with:
 }
 \`\`\`
 
-Populate from step 3.1:
+Populate from step ${partNumber}.1:
 - \`companyName\`: Use og:title, or page title (remove " - Home" / " | Home" suffix), or domain name as fallback
 - \`tagline\`: Use og:description or meta description (first sentence only)
 - \`description\`: Full og:description or meta description
@@ -231,13 +227,15 @@ Populate from step 3.1:
 - \`ogImageUrl\`: From og:image meta
 - \`aboutText\`: empty string (we do not navigate to about pages)
 
-**CRITICAL**: You MUST write \`.claude/branding/brand-data.json\` no matter what. If fields are unknown, use null. The downstream pipeline DEPENDS on this file existing.
+**CRITICAL**: You MUST write \`.claude/branding/brand-data.json\` no matter what. If fields are unknown, use null. The downstream pipeline DEPENDS on this file existing.`;
+}
 
-## PART 4 — ICON EXTRACTION (after brand data, while the page is still open)
+function getIconSection(partNumber: number): string {
+  return `## PART ${partNumber} — ICON EXTRACTION (while the page is still open)
 
 Detect which icon library the site uses and extract icon names.
 
-### Step 4.1: Detect icons via evaluate_script
+### Step ${partNumber}.1: Detect icons via evaluate_script
 
 Call \`mcp__chrome-devtools__evaluate_script\` with this single script:
 
@@ -316,7 +314,7 @@ Call \`mcp__chrome-devtools__evaluate_script\` with this single script:
 }
 \`\`\`
 
-### Step 4.2: Write icon-data.json — THIS IS MANDATORY
+### Step ${partNumber}.2: Write icon-data.json — THIS IS MANDATORY
 
 **YOU MUST ALWAYS WRITE THIS FILE**, even if no icons were detected.
 
@@ -330,13 +328,126 @@ Write the file \`.claude/icons/icon-data.json\` with:
 }
 \`\`\`
 
-- \`library\`: the detected library name from step 4.1 (or "none")
+- \`library\`: the detected library name from step ${partNumber}.1 (or "none")
 - \`icons\`: array of unique icon names detected
 - \`count\`: total number of icon elements found on the page
 
-**CRITICAL**: You MUST write \`.claude/icons/icon-data.json\` no matter what. If no icons are detected, write it with \`{ "library": "none", "icons": [], "count": 0 }\`. The downstream pipeline DEPENDS on this file existing.
+**CRITICAL**: You MUST write \`.claude/icons/icon-data.json\` no matter what. If no icons are detected, write it with \`{ "library": "none", "icons": [], "count": 0 }\`. The downstream pipeline DEPENDS on this file existing.`;
+}
 
-## Expected output
+function getColorExtractionSection(partNumber: number): string {
+  return `## PART ${partNumber} — COLOR EXTRACTION VIA JS (while the page is still open)
+
+Extract colors directly from the live DOM using \`getComputedStyle()\`. This is more reliable than guessing from screenshots.
+
+### Step ${partNumber}.1: Extract light mode colors
+
+Make sure the page is in light mode first. If you previously set dark mode, reset it:
+\`emulate\` with \`colorScheme: "light"\`
+
+Call \`mcp__chrome-devtools__evaluate_script\` with:
+
+\`\`\`
+() => {
+  const rgbToHex = (rgb) => {
+    const m = rgb.match(/rgba?\\(\\s*(\\d+),\\s*(\\d+),\\s*(\\d+)/);
+    if (!m) return rgb;
+    return '#' + [m[1],m[2],m[3]].map(x => (+x).toString(16).padStart(2,'0')).join('');
+  };
+
+  const getColor = (el, prop) => {
+    if (!el) return null;
+    const val = getComputedStyle(el)[prop];
+    return val ? rgbToHex(val) : null;
+  };
+
+  const body = document.body;
+  const header = document.querySelector('header, [class*="header"], nav');
+  const card = document.querySelector('[class*="card"], [class*="Card"], article, section > div');
+  const h1 = document.querySelector('h1, [class*="heading"], [class*="title"]');
+  const h2 = document.querySelector('h2');
+  const p = document.querySelector('p, [class*="description"], [class*="subtitle"]');
+  const a = document.querySelector('a:not([class*="logo"])');
+  const btn = document.querySelector('button, [class*="btn"], [class*="Button"], [role="button"]');
+  const input = document.querySelector('input, textarea');
+  const divider = document.querySelector('hr, [class*="divider"], [class*="border"]');
+  const footer = document.querySelector('footer, [class*="footer"]');
+
+  return JSON.stringify({
+    backgrounds: {
+      page: getColor(body, 'backgroundColor'),
+      header: getColor(header, 'backgroundColor'),
+      card: getColor(card, 'backgroundColor'),
+      footer: getColor(footer, 'backgroundColor'),
+    },
+    text: {
+      heading: getColor(h1, 'color') || getColor(h2, 'color'),
+      body: getColor(p, 'color') || getColor(body, 'color'),
+      muted: getColor(document.querySelector('[class*="muted"], [class*="secondary"], small, .text-gray'), 'color'),
+      link: getColor(a, 'color'),
+    },
+    accents: {
+      primary: getColor(btn, 'backgroundColor') || getColor(a, 'color'),
+      primaryText: getColor(btn, 'color'),
+    },
+    borders: {
+      default: getColor(input, 'borderColor') || getColor(card, 'borderColor') || getColor(divider, 'borderColor'),
+    },
+    surfaces: {
+      input: getColor(input, 'backgroundColor'),
+    },
+  }, null, 2);
+}
+\`\`\`
+
+### Step ${partNumber}.2: Write light mode color data
+
+Write the result to \`.claude/colors/color-data.json\`.
+
+### Step ${partNumber}.3: Extract dark mode colors
+
+Emulate dark mode: \`emulate\` with \`colorScheme: "dark"\`
+
+Wait briefly for the page to update, then run the **exact same script** from Step ${partNumber}.1.
+
+### Step ${partNumber}.4: Write dark mode color data
+
+Write the result to \`.claude/colors/color-data-dark.json\`.
+
+Reset back to light mode: \`emulate\` with \`colorScheme: "light"\`
+
+**CRITICAL**: You MUST write \`.claude/colors/color-data.json\` no matter what. If color extraction fails, write it with null values. The downstream pipeline DEPENDS on this file existing.`;
+}
+
+// ── Main export ─────────────────────────────────────────────────────
+
+export function getScreenshotPrompt(url: string, mode: PipelineMode = "design-system"): string {
+  const isReplicate = mode === "replicate";
+
+  const mission = isReplicate
+    ? "Navigate to the provided URL, wait for full page load, capture full-page screenshots, and extract design data from the live page."
+    : "Navigate to the provided URL, wait for full page load, and extract design data (fonts, brand, icons, colors) from the live page.";
+
+  const writeDirs = isReplicate
+    ? "- ONLY write files to \\`.claude/screenshots/\\`, \\`.claude/fonts/\\`, \\`.claude/branding/\\`, \\`.claude/icons/\\`, \\`.claude/colors/\\`, and \\`public/fonts/\\`"
+    : "- ONLY write files to \\`.claude/fonts/\\`, \\`.claude/branding/\\`, \\`.claude/icons/\\`, \\`.claude/colors/\\`, and \\`public/fonts/\\`";
+
+  // Build parts list based on mode
+  let parts: string;
+  let expectedOutput: string;
+  let nextPart: number;
+
+  if (isReplicate) {
+    // Replicate: screenshots + fonts + brand + icons + colors
+    nextPart = 2;
+    parts = [
+      getScreenshotSection(url),
+      getFontExtractionSection(url, nextPart),
+      getBrandSection(nextPart + 1),
+      getIconSection(nextPart + 2),
+      getColorExtractionSection(nextPart + 3),
+    ].join("\n\n");
+    expectedOutput = `## Expected output
 
 \`\`\`
 .claude/screenshots/
@@ -353,9 +464,68 @@ Write the file \`.claude/icons/icon-data.json\` with:
 .claude/icons/
   icon-data.json         # Icon library detection (MUST exist)
 
+.claude/colors/
+  color-data.json        # Light mode colors (MUST exist)
+  color-data-dark.json   # Dark mode colors (optional)
+
 public/fonts/
   *.woff2                # Downloaded font files (if any)
+\`\`\``;
+  } else {
+    // Design system: navigate + fonts + brand + icons + colors (NO screenshots)
+    nextPart = 2;
+    parts = [
+      getNavigationSection(url),
+      getFontExtractionSection(url, nextPart),
+      getBrandSection(nextPart + 1),
+      getIconSection(nextPart + 2),
+      getColorExtractionSection(nextPart + 3),
+    ].join("\n\n");
+    expectedOutput = `## Expected output
+
 \`\`\`
+.claude/fonts/
+  font-data.json         # Font extraction results (MUST exist)
+
+.claude/branding/
+  brand-data.json        # Brand identity data (MUST exist)
+
+.claude/icons/
+  icon-data.json         # Icon library detection (MUST exist)
+
+.claude/colors/
+  color-data.json        # Light mode colors (MUST exist)
+  color-data-dark.json   # Dark mode colors (optional)
+
+public/fonts/
+  *.woff2                # Downloaded font files (if any)
+\`\`\``;
+  }
+
+  return `You are an agent specialized in extracting design data from live web pages.
+
+## Your mission
+
+${mission}
+
+## Target URL
+
+${url}
+
+## CRITICAL RULES
+
+- You have access to Read, Write, Bash, and chrome-devtools MCP tools
+- Do NOT modify any project source files (package.json, test files, tsconfig, etc.)
+- Do NOT install any packages or commit to git
+${writeDirs}
+- The output directories already exist — do not try to create them
+- Font extraction is best-effort. If any font step fails, write what you have and continue.
+- Brand extraction is best-effort. If any brand step fails, write what you have and continue.
+- Color extraction is best-effort. If any color step fails, write what you have and continue.
+
+${parts}
+
+${expectedOutput}
 
 ## Rules
 
@@ -363,7 +533,7 @@ public/fonts/
 - Wait for complete load before capturing (avoid partial screenshots)
 - If the URL returns an error (404, 500), report immediately without attempting capture
 - Do not modify any project source files
-- If \`emulate\` for dark mode fails, continue without the dark screenshot — it's not blocking
+- If \`emulate\` for dark mode fails, continue without the dark data — it's not blocking
 - If font extraction fails at any step, write partial results and continue — it's not blocking
-- You MUST write \`font-data.json\`, \`brand-data.json\`, and \`icon-data.json\` even with partial/empty data`;
+- You MUST write \`font-data.json\`, \`brand-data.json\`, \`icon-data.json\`, and \`color-data.json\` even with partial/empty data`;
 }

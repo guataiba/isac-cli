@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type {
   PipelineContext,
+  PipelineMode,
   PipelineStopAfter,
   PhaseConfig,
   PhaseOutput,
@@ -42,12 +43,14 @@ describe("Types", () => {
       cwd: "/tmp/test",
       screenshotDir: ".claude/screenshots",
       maxRetries: 3,
+      mode: "design-system",
       stopAfter: null,
       adapter: mockAdapter,
     };
     expect(ctx.url).toBe("https://example.com");
     expect(ctx.sessionId).toBeUndefined();
     expect(ctx.stopAfter).toBeNull();
+    expect(ctx.mode).toBe("design-system");
     expect(ctx.adapter.name).toBe("mock");
   });
 
@@ -57,11 +60,28 @@ describe("Types", () => {
       cwd: "/tmp/test",
       screenshotDir: ".claude/screenshots",
       maxRetries: 3,
+      mode: "design-system",
       stopAfter: null,
       sessionId: "session-123",
       adapter: mockAdapter,
     };
     expect(ctx.sessionId).toBe("session-123");
+  });
+
+  it("PipelineContext supports mode values", () => {
+    const modes: PipelineMode[] = ["design-system", "replicate"];
+    for (const mode of modes) {
+      const ctx: PipelineContext = {
+        url: "https://example.com",
+        cwd: "/tmp/test",
+        screenshotDir: ".claude/screenshots",
+        maxRetries: 3,
+        mode,
+        stopAfter: null,
+        adapter: mockAdapter,
+      };
+      expect(ctx.mode).toBe(mode);
+    }
   });
 
   it("PipelineContext supports stopAfter values", () => {
@@ -76,9 +96,8 @@ describe("Types", () => {
         url: "https://example.com",
         cwd: "/tmp/test",
         screenshotDir: ".claude/screenshots",
-        animationCatalogPath: ".claude/animations/catalog.json",
-        skipAnimations: false,
         maxRetries: 3,
+        mode: "design-system",
         stopAfter,
         adapter: mockAdapter,
       };

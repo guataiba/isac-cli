@@ -1,11 +1,56 @@
 import { DESIGN_TOKENS_CSS_TEMPLATE } from "@guataiba/isac-core";
+import type { PipelineMode } from "@guataiba/isac-core";
 
-export function getDsExtractorPrompt(screenshotDir: string, _targetUrl?: string): string {
+export function getDsExtractorPrompt(screenshotDir: string, _targetUrl?: string, mode?: PipelineMode): string {
+  const isReplicate = mode === "replicate";
+
+  const colorExtractionPart = isReplicate
+    ? `## PART 2 — COLOR EXTRACTION
+
+### Step 2.1: Read screenshots
+
+Read each image in \`${screenshotDir}\` using the Read tool. Identify:
+
+- **Background colors**: page background, card backgrounds, header backgrounds, glass/blur surfaces
+- **Text colors**: headings, body text, secondary/muted text, links
+- **Border colors**: dividers, card borders, input borders
+- **Accent colors**: CTAs, highlights, badges, active states
+
+### Step 2.2: Build the color palette
+
+- Map each color to the closest hex value
+- Create primitive tokens (\`--sf-*\`) with absolute hex values
+- Create semantic tokens (\`--color-*\`) that reference primitives via \`var()\`
+- Create dark mode mappings by inverting the palette (dark backgrounds ↔ light text)`
+    : `## PART 2 — COLOR EXTRACTION
+
+### Step 2.1: Read color data
+
+Read \`.claude/colors/color-data.json\` (light mode) and \`.claude/colors/color-data-dark.json\` (dark mode, if exists).
+
+These files contain hex color values extracted from the live page via \`getComputedStyle()\`, organized as:
+\`\`\`json
+{
+  "backgrounds": { "page": "#hex", "header": "#hex", "card": "#hex", "footer": "#hex" },
+  "text": { "heading": "#hex", "body": "#hex", "muted": "#hex", "link": "#hex" },
+  "accents": { "primary": "#hex", "primaryText": "#hex" },
+  "borders": { "default": "#hex" },
+  "surfaces": { "input": "#hex" }
+}
+\`\`\`
+
+### Step 2.2: Build palette from JSON
+
+- Derive a primitive scale (\`--sf-gray-50\` through \`--sf-gray-950\`, \`--sf-brand-*\`, etc.) from the sampled hex values
+- Map to semantic tokens (\`--color-bg-primary\`, \`--color-text-primary\`, etc.)
+- If dark JSON exists, use its exact values for dark mode mappings; otherwise invert the light palette
+- Use the actual hex values from the JSON — do not guess or approximate`;
+
   return `You are an expert in design systems, font extraction, and CSS token generation.
 
 ## Your mission
 
-Extract design tokens from screenshots and font data on disk, then write \`app/globals.css\`.
+Extract design tokens from ${isReplicate ? "screenshots and" : "color data and"} font data on disk, then write \`app/globals.css\`.
 
 **You write ONE file**: \`app/globals.css\` — nothing else.
 
@@ -65,23 +110,7 @@ If \`.claude/fonts/font-data.json\` does not exist or is empty, use these generi
 
 ---
 
-## PART 2 — COLOR EXTRACTION
-
-### Step 2.1: Read screenshots
-
-Read each image in \`${screenshotDir}\` using the Read tool. Identify:
-
-- **Background colors**: page background, card backgrounds, header backgrounds, glass/blur surfaces
-- **Text colors**: headings, body text, secondary/muted text, links
-- **Border colors**: dividers, card borders, input borders
-- **Accent colors**: CTAs, highlights, badges, active states
-
-### Step 2.2: Build the color palette
-
-- Map each color to the closest hex value
-- Create primitive tokens (\`--sf-*\`) with absolute hex values
-- Create semantic tokens (\`--color-*\`) that reference primitives via \`var()\`
-- Create dark mode mappings by inverting the palette (dark backgrounds ↔ light text)
+${colorExtractionPart}
 
 ---
 
@@ -130,8 +159,8 @@ Run \`npm run build\` to check for compilation errors.
 ## CRITICAL RULES
 
 - You write ONLY \`app/globals.css\` — do NOT create any other files
-- Do NOT use Chrome DevTools — all font data is already on disk
-- Read \`.claude/fonts/font-data.json\` for font information
+- Do NOT use Chrome DevTools — all data is already on disk
+- Read \`.claude/fonts/font-data.json\` for font information${isReplicate ? "" : "\n- Read \\`.claude/colors/color-data.json\\` and \\`.claude/colors/color-data-dark.json\\` for color information"}
 - Use hex values for primitives, never oklch/hsl unless the original uses it
 - Body MUST use \`font-family: var(--font-sans)\`, never hardcoded fonts`;
 }

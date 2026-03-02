@@ -1,3 +1,5 @@
+import type { PipelineMode } from "./pipeline/types.js";
+
 /**
  * Describes a template file that the adapter wants written to disk.
  */
@@ -35,13 +37,13 @@ export interface FrameworkAdapter {
    * Phase 1A: Returns the prompt for design token extraction.
    * Framework-specific because it references CSS file paths and styling patterns.
    */
-  getTokenExtractionPrompt(screenshotDir: string, targetUrl?: string): string;
+  getTokenExtractionPrompt(screenshotDir: string, targetUrl?: string, mode?: PipelineMode): string;
 
   /**
    * Phase 1B: Returns the prompt for design system page/data generation.
    * Framework-specific because it references component paths.
    */
-  getDesignSystemPrompt(screenshotDir: string): string;
+  getDesignSystemPrompt(screenshotDir: string, mode?: PipelineMode): string;
 
   /**
    * Phase 2: Returns the prompt for page planning.

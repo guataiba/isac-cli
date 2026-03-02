@@ -1,6 +1,6 @@
 import { join, dirname } from "node:path";
 import { mkdirSync, writeFileSync, existsSync, readFileSync, unlinkSync } from "node:fs";
-import { runPhase0 } from "./phase-0-screenshot.js";
+import { runPhase0, createPhase0EventHandler } from "./phase-0-screenshot.js";
 import { runPhase1a } from "./phase-1a-tokens.js";
 import { runPhase1b } from "./phase-1b-design-system.js";
 import { runPhase2 } from "./phase-2-planning.js";
@@ -78,6 +78,7 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
     cwd: options.dir,
     screenshotDir: ".claude/screenshots",
     maxRetries: options.maxRetries,
+    mode: options.mode,
     stopAfter: options.stopAfter,
     adapter: options.adapter,
   };
@@ -112,6 +113,7 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
   mkdirSync(join(ctx.cwd, ".claude/fonts"), { recursive: true });
   mkdirSync(join(ctx.cwd, ".claude/branding"), { recursive: true });
   mkdirSync(join(ctx.cwd, ".claude/icons"), { recursive: true });
+  mkdirSync(join(ctx.cwd, ".claude/colors"), { recursive: true });
   mkdirSync(join(ctx.cwd, "public/fonts"), { recursive: true });
   for (const dir of ctx.adapter.getRequiredDirs()) {
     mkdirSync(join(ctx.cwd, dir), { recursive: true });
@@ -134,16 +136,23 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
   // Phase 0: Screenshots + Font Extraction (own session, needs chrome-devtools)
   // ═══════════════════════════════════════════════
   enableMcp(ctx.cwd);
-  setPhase("Capturing screenshots + fonts...");
-  const phase0 = await runPhase0(ctx, onEvent);
+  setPhase(ctx.mode === "replicate"
+    ? "Capturing screenshots + fonts..."
+    : "Extracting design data...");
+  const phase0OnEvent = createPhase0EventHandler(ctx, onEvent);
+  const phase0 = await runPhase0(ctx, phase0OnEvent);
   disableMcp(ctx.cwd);
   phases.push(phase0);
   if (!phase0.success) {
-    failPhase("Screenshot capture failed");
+    failPhase(ctx.mode === "replicate"
+      ? "Screenshot capture failed"
+      : "Design data extraction failed");
     stopSpinner();
     return mkResult(false, false);
   }
-  succeedPhase(`Screenshots + fonts captured (${log.elapsed(totalStart)})`);
+  succeedPhase(ctx.mode === "replicate"
+    ? `Screenshots + fonts captured (${log.elapsed(totalStart)})`
+    : `Design data extracted (${log.elapsed(totalStart)})`);
   ctx.sessionId = undefined; // Break session chain — subsequent phases read artifacts from disk
 
   if (ctx.stopAfter === "screenshots") {
@@ -173,7 +182,11 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
   // Exception: --stop-after design-system skips P2 entirely.
   // ═══════════════════════════════════════════════
 
-  if (ctx.stopAfter === "design-system") {
+  // Design system mode stops after Phase 1B by default (unless overridden by stopAfter)
+  const stopAtDesignSystem = ctx.stopAfter === "design-system"
+    || (ctx.mode === "design-system" && !ctx.stopAfter);
+
+  if (stopAtDesignSystem) {
     // Only P1B needed — skip P2 to save cost
     ctx.sessionId = undefined;
     setPhase("Building design system docs...");
@@ -189,7 +202,7 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
     writeDesignSystemTemplates(ctx);
     stopSpinner();
     log.divider();
-    log.success("Design system complete. Stopped as requested.");
+    log.success("Design system complete.");
     log.info(`Run: npm run dev → ${ctx.adapter.getDevServerUrl()}/design-system`);
     return mkResult(true, false, "design-system");
   }

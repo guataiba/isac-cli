@@ -7,6 +7,7 @@ import {
   readConfig,
   runPipeline,
   type PipelineStopAfter,
+  type PipelineMode,
 } from "@guataiba/isac-core";
 import { resolveAdapter } from "../adapters.js";
 
@@ -16,7 +17,7 @@ export interface CaptureOptions {
   dir?: string;
   maxRetries?: number;
   framework?: string;
-  onlyDesignSystem?: boolean;
+  replicate?: boolean;
   stopAfter?: string;
 }
 
@@ -52,11 +53,12 @@ export async function captureCommand(
   // Resolve adapter (CLI flag > config > default)
   const adapter = resolveAdapter(options.framework ?? config?.framework ?? "nextjs");
   const maxRetries = options.maxRetries ?? 3;
+  // Resolve mode
+  const mode: PipelineMode = options.replicate ? "replicate" : "design-system";
+
   // Resolve stopAfter
   let stopAfter: PipelineStopAfter = null;
-  if (options.onlyDesignSystem) {
-    stopAfter = "design-system";
-  } else if (options.stopAfter) {
+  if (options.stopAfter) {
     const valid = ["screenshots", "design-system", "planning"];
     if (!valid.includes(options.stopAfter)) {
       console.error(
@@ -73,9 +75,10 @@ export async function captureCommand(
   log.summary("Target", url);
   log.summary("Directory", dir);
   log.summary("Framework", adapter.displayName);
+  log.summary("Mode", mode === "replicate" ? "Page replication" : "Design system");
   if (stopAfter) {
     log.summary("Stop after", stopAfter);
-  } else {
+  } else if (mode === "replicate") {
     log.summary("Max retries", String(maxRetries));
   }
   console.log();
@@ -93,6 +96,7 @@ export async function captureCommand(
       url,
       dir,
       maxRetries,
+      mode,
       stopAfter,
       adapter,
     });

@@ -1,9 +1,11 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import chalk from "chalk";
 import { runClaudePhase } from "./claude-runner.js";
 import { PHASE_0_TOOLS } from "./tools.js";
 import { getScreenshotPrompt } from "../prompts/screenshot-capturer.js";
 import { log } from "../ui/logger.js";
+import { logLine, updateStatus } from "../ui/tui.js";
 import type { PipelineContext, PhaseResult } from "./types.js";
 
 const DEFAULT_FONT_DATA = JSON.stringify({
@@ -31,6 +33,72 @@ const DEFAULT_BRAND_DATA = JSON.stringify({
   aboutText: "",
 }, null, 2);
 
+const DEFAULT_COLOR_DATA = JSON.stringify({
+  backgrounds: { page: null, header: null, card: null, footer: null },
+  text: { heading: null, body: null, muted: null, link: null },
+  accents: { primary: null, primaryText: null },
+  borders: { default: null },
+  surfaces: { input: null },
+}, null, 2);
+
+// ── Phase 0 substep tracking ──────────────────────────────────────
+
+interface WatchedFile {
+  path: string;
+  label: string;
+  replicateOnly?: boolean;
+}
+
+const WATCHED_FILES: WatchedFile[] = [
+  { path: ".claude/fonts/font-data.json", label: "font-data.json" },
+  { path: ".claude/branding/brand-data.json", label: "brand-data.json" },
+  { path: ".claude/icons/icon-data.json", label: "icon-data.json" },
+  { path: ".claude/colors/color-data.json", label: "color-data.json (light)" },
+  { path: ".claude/colors/color-data-dark.json", label: "color-data-dark.json (dark)" },
+  { path: ".claude/screenshots/full-page.png", label: "full-page.png (light)", replicateOnly: true },
+  { path: ".claude/screenshots/full-page-dark.png", label: "full-page-dark.png (dark)", replicateOnly: true },
+];
+
+/**
+ * Creates an enhanced event handler for Phase 0 that updates the spinner
+ * status based on detected tool calls, providing granular substep feedback.
+ */
+export function createPhase0EventHandler(
+  ctx: PipelineContext,
+  outerOnEvent?: (event: Record<string, unknown>) => void,
+): (event: Record<string, unknown>) => void {
+  let evalScriptCount = 0;
+
+  return (event: Record<string, unknown>) => {
+    // Always forward to the outer handler (renderEvent via orchestrator)
+    if (outerOnEvent) outerOnEvent(event);
+
+    const type = event.type as string | undefined;
+    if (type !== "assistant" || event.subtype !== "tool_use") return;
+
+    const toolName = (event.tool_name as string) ?? "";
+
+    if (toolName.includes("navigate_page")) {
+      updateStatus("Navigating to page...");
+    } else if (toolName.includes("emulate")) {
+      updateStatus("Emulating dark mode...");
+    } else if (toolName.includes("evaluate_script")) {
+      evalScriptCount++;
+      if (evalScriptCount <= 4) {
+        updateStatus("Extracting fonts...");
+      } else if (evalScriptCount === 5) {
+        updateStatus("Extracting brand data...");
+      } else if (evalScriptCount === 6) {
+        updateStatus("Extracting icons...");
+      } else {
+        updateStatus("Extracting colors...");
+      }
+    } else if (toolName.includes("take_screenshot")) {
+      updateStatus("Taking screenshots...");
+    }
+  };
+}
+
 export async function runPhase0(
   ctx: PipelineContext,
   onEvent?: (event: Record<string, unknown>) => void,
@@ -42,36 +110,76 @@ export async function runPhase0(
   const fontsDir = join(ctx.cwd, ".claude/fonts");
 
   try {
-    const result = await runClaudePhase(
-      {
-        name: "phase-0-screenshot",
-        prompt: getScreenshotPrompt(ctx.url),
-        allowedTools: [...PHASE_0_TOOLS],
-        model: "claude-sonnet-4-6",
-        timeout: 180_000,
-        maxTurns: 25,
-        activityTimeout: 180_000, // Chrome MCP startup + page load can have long gaps
-      },
-      ctx.cwd,
-      ctx.sessionId,
-      onEvent,
-    );
+    // File poller: check for created artifacts every 3s and log them
+    const seen = new Set<string>();
+    const poller = setInterval(() => {
+      for (const { path, label, replicateOnly } of WATCHED_FILES) {
+        if (replicateOnly && ctx.mode !== "replicate") continue;
+        const full = join(ctx.cwd, path);
+        if (!seen.has(path) && existsSync(full)) {
+          seen.add(path);
+          logLine(chalk.green(`    ✓ ${label}`));
+        }
+      }
+    }, 3_000);
+
+    let result: Awaited<ReturnType<typeof runClaudePhase>>;
+    try {
+      result = await runClaudePhase(
+        {
+          name: "phase-0-screenshot",
+          prompt: getScreenshotPrompt(ctx.url, ctx.mode),
+          allowedTools: [...PHASE_0_TOOLS],
+          model: "claude-sonnet-4-6",
+          timeout: 300_000, // 5 min — font/brand/icon/color extraction + dark mode emulation
+          maxTurns: 30,
+          activityTimeout: 180_000, // Chrome MCP startup + page load can have long gaps
+        },
+        ctx.cwd,
+        ctx.sessionId,
+        onEvent,
+      );
+    } finally {
+      clearInterval(poller);
+    }
 
     // Update session ID for chaining
     ctx.sessionId = result.sessionId;
 
-    // Validate screenshots
-    const fullPagePath = join(screenshotDir, "full-page.png");
-    const valid = existsSync(fullPagePath);
+    // Validate based on mode
+    const colorsDir = join(ctx.cwd, ".claude/colors");
+    const colorDataPath = join(colorsDir, "color-data.json");
+    let valid: boolean;
 
-    if (valid) {
-      log.success("full-page.png (light)");
-      const darkPath = join(screenshotDir, "full-page-dark.png");
-      if (existsSync(darkPath)) {
-        log.success("full-page-dark.png (dark)");
+    if (ctx.mode === "replicate") {
+      // Replicate mode: screenshots are required
+      const fullPagePath = join(screenshotDir, "full-page.png");
+      valid = existsSync(fullPagePath);
+
+      if (valid) {
+        log.success("full-page.png (light)");
+        const darkPath = join(screenshotDir, "full-page-dark.png");
+        if (existsSync(darkPath)) {
+          log.success("full-page-dark.png (dark)");
+        }
+      } else {
+        log.error("full-page.png not found — screenshot capture failed");
       }
     } else {
-      log.error("full-page.png not found — screenshot capture failed");
+      // Design system mode: color-data.json is required (no screenshots)
+      valid = existsSync(colorDataPath);
+
+      if (valid) {
+        log.success("color-data.json (light mode colors)");
+        const darkColorPath = join(colorsDir, "color-data-dark.json");
+        if (existsSync(darkColorPath)) {
+          log.success("color-data-dark.json (dark mode colors)");
+        }
+      } else {
+        log.warn("color-data.json not found — will use defaults");
+        // Not fatal in design-system mode — safety net below will create defaults
+        valid = true;
+      }
     }
 
     // Safety net: create default font-data.json if agent didn't write it
@@ -103,6 +211,12 @@ export async function runPhase0(
     if (!existsSync(iconDataPath)) {
       writeFileSync(iconDataPath, DEFAULT_ICON_DATA, "utf-8");
       log.warn("icon-data.json not created by agent — wrote default (no icons)");
+    }
+
+    // Safety net: create default color-data.json if agent didn't write it
+    if (!existsSync(colorDataPath)) {
+      writeFileSync(colorDataPath, DEFAULT_COLOR_DATA, "utf-8");
+      log.warn("color-data.json not created by agent — wrote default (null colors)");
     }
 
     // Validate icon extraction (non-blocking)

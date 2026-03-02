@@ -27,8 +27,8 @@ program
     "nextjs",
   )
   .option(
-    "--only-design-system",
-    "Stop after building the design system (Phase 0 + 1a + 1b)",
+    "--replicate",
+    "Full page replication (screenshots + implementation)",
     false,
   )
   .option(
@@ -40,7 +40,7 @@ program
       dir: opts.dir as string | undefined,
       maxRetries: opts.maxRetries ? parseInt(opts.maxRetries as string, 10) : 3,
       framework: (opts.framework as string) ?? "nextjs",
-      onlyDesignSystem: opts.onlyDesignSystem as boolean,
+      replicate: opts.replicate as boolean,
       stopAfter: opts.stopAfter as string | undefined,
     });
   });

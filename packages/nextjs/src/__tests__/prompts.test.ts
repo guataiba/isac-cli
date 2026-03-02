@@ -8,26 +8,42 @@ import { getVisualVerifierPrompt } from "../prompts/visual-verifier.js";
 describe("Next.js prompt generation", () => {
   const testDir = ".claude/screenshots";
 
-  it("ds-extractor prompt reads font-data.json from disk (no chrome-devtools)", () => {
-    const prompt = getDsExtractorPrompt(testDir);
-    expect(prompt).toContain(testDir);
+  it("ds-extractor prompt (design-system mode) reads color JSON from disk", () => {
+    const prompt = getDsExtractorPrompt(testDir, undefined, "design-system");
     expect(prompt).toContain("--sf-");
     expect(prompt).toContain("--color-");
     expect(prompt).toContain("globals.css");
-    // Reads fonts from disk
     expect(prompt).toContain("font-data.json");
     expect(prompt).toContain(".claude/fonts/font-data.json");
-    // No Chrome DevTools references
+    // Design-system mode reads colors from JSON
+    expect(prompt).toContain("color-data.json");
     expect(prompt).not.toContain("mcp__chrome-devtools__");
   });
 
-  it("ds-page-builder prompt includes screenshot dir and data schema", () => {
-    const prompt = getDsPageBuilderPrompt(testDir);
+  it("ds-extractor prompt (replicate mode) reads screenshots for colors", () => {
+    const prompt = getDsExtractorPrompt(testDir, undefined, "replicate");
     expect(prompt).toContain(testDir);
+    expect(prompt).toContain("Read each image");
+    expect(prompt).toContain("globals.css");
+    expect(prompt).toContain("font-data.json");
+  });
+
+  it("ds-page-builder prompt (design-system mode) omits screenshot reference", () => {
+    const prompt = getDsPageBuilderPrompt(testDir, "design-system");
     expect(prompt).toContain("design-system/data.ts");
     expect(prompt).toContain("siteInfo");
     expect(prompt).toContain("primitives");
     expect(prompt).toContain("semanticTokens");
+    expect(prompt).not.toContain("Read screenshots");
+  });
+
+  it("ds-page-builder prompt (replicate mode) includes screenshot reference", () => {
+    const prompt = getDsPageBuilderPrompt(testDir, "replicate");
+    expect(prompt).toContain(testDir);
+    expect(prompt).toContain("design-system/data.ts");
+    expect(prompt).toContain("siteInfo");
+    expect(prompt).toContain("primitives");
+    expect(prompt).toContain("Read screenshots");
   });
 
   it("page-planner prompt includes screenshot dir and reads only globals.css", () => {

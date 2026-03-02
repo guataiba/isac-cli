@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
-import type { FrameworkAdapter, TemplateFile, PhaseValidation } from "@guataiba/isac-core";
+import type { FrameworkAdapter, TemplateFile, PhaseValidation, PipelineMode } from "@guataiba/isac-core";
 import { DESIGN_TOKENS_CSS_TEMPLATE } from "@guataiba/isac-core";
 import { getDsExtractorPrompt } from "./prompts/ds-extractor.js";
 import { getDsPageBuilderPrompt } from "./prompts/ds-page-builder.js";
@@ -259,12 +259,12 @@ export const nextjsAdapter: FrameworkAdapter = {
 
   // ─── Prompts ─────────────────────────────────────────────
 
-  getTokenExtractionPrompt(screenshotDir: string, targetUrl?: string): string {
-    return getDsExtractorPrompt(screenshotDir, targetUrl);
+  getTokenExtractionPrompt(screenshotDir: string, targetUrl?: string, mode?: PipelineMode): string {
+    return getDsExtractorPrompt(screenshotDir, targetUrl, mode);
   },
 
-  getDesignSystemPrompt(screenshotDir: string): string {
-    return getDsPageBuilderPrompt(screenshotDir);
+  getDesignSystemPrompt(screenshotDir: string, mode?: PipelineMode): string {
+    return getDsPageBuilderPrompt(screenshotDir, mode);
   },
 
   getPagePlannerPrompt(screenshotDir: string): string {

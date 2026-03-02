@@ -1,5 +1,7 @@
 import type { FrameworkAdapter } from "../adapter.js";
 
+export type PipelineMode = "design-system" | "replicate";
+
 export type PipelineStopAfter =
   | "screenshots"
   | "design-system"
@@ -11,6 +13,7 @@ export interface PipelineContext {
   cwd: string;
   screenshotDir: string;
   maxRetries: number;
+  mode: PipelineMode;
   stopAfter: PipelineStopAfter;
   sessionId?: string;
   adapter: FrameworkAdapter;
@@ -56,6 +59,7 @@ export interface PipelineOptions {
   url: string;
   dir: string;
   maxRetries: number;
+  mode: PipelineMode;
   stopAfter: PipelineStopAfter;
   adapter: FrameworkAdapter;
 }

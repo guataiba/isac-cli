@@ -1,6 +1,19 @@
 import { DESIGN_SYSTEM_DATA_TEMPLATE } from "../templates/design-system-data.ts.js";
+import type { PipelineMode } from "@guataiba/isac-core";
 
-export function getDsPageBuilderPrompt(screenshotDir: string): string {
+export function getDsPageBuilderPrompt(screenshotDir: string, mode?: PipelineMode): string {
+  const isReplicate = mode === "replicate";
+
+  const screenshotInput = isReplicate
+    ? `- Screenshots in \`${screenshotDir}\` — visual reference for typography and site info`
+    : "";
+
+  const screenshotStep = isReplicate
+    ? `3. **Read screenshots** in \`${screenshotDir}\` to determine:
+   - Site name and domain (fallback if brand-data.json is missing)
+   - Font sizes observed (map to a scale)`
+    : `3. **Determine site info** from brand-data.json and globals.css (fallback to domain name if missing)`;
+
   return `You are an expert at parsing CSS custom properties and extracting design tokens.
 
 ## Your mission
@@ -12,7 +25,7 @@ Read \`app/globals.css\`, parse ALL CSS custom properties, and write \`app/desig
 ## Input
 
 - \`app/globals.css\` — already populated with primitive (\`--sf-*\`), semantic (\`--color-*\`), font (\`--font-*\`), spacing, and dark mode tokens
-- Screenshots in \`${screenshotDir}\` — visual reference for typography and site info
+${screenshotInput}
 - \`.claude/branding/brand-data.json\` — brand identity data (company name, tagline, description, logo/favicon URLs)
 - \`.claude/icons/icon-data.json\` — detected icon library and icon names
 
@@ -36,9 +49,7 @@ Read \`app/globals.css\`, parse ALL CSS custom properties, and write \`app/desig
    - \`branding.ogImageUrl\`: use \`ogImageUrl\` from brand data
    - \`branding.aboutText\`: use \`aboutText\` from brand data
 
-3. **Read screenshots** in \`${screenshotDir}\` to determine:
-   - Site name and domain (fallback if brand-data.json is missing)
-   - Font sizes observed (map to a scale)
+${screenshotStep}
 
 4. **Write \`app/design-system/data.ts\`** following this exact schema:
 

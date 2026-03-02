@@ -13,7 +13,7 @@ export async function runPhase1b(
     const result = await runClaudePhase(
       {
         name: "phase-1b-design-system",
-        prompt: ctx.adapter.getDesignSystemPrompt(ctx.screenshotDir),
+        prompt: ctx.adapter.getDesignSystemPrompt(ctx.screenshotDir, ctx.mode),
         allowedTools: [...PHASE_1B_TOOLS],
         model: "claude-sonnet-4-6",
         timeout: 180_000,
