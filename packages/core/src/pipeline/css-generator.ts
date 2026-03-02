@@ -49,6 +49,14 @@ interface ColorData {
 
 const GRAY_STEPS = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950] as const;
 
+/** Tailwind default gray scale — used as fallback when extracted data is unusable */
+const DEFAULT_GRAY_SCALE: Map<number, string> = new Map([
+  [50, "#f9fafb"], [100, "#f3f4f6"], [200, "#e5e7eb"],
+  [300, "#d1d5db"], [400, "#9ca3af"], [500, "#6b7280"],
+  [600, "#4b5563"], [700, "#374151"], [800, "#1f2937"],
+  [900, "#111827"], [950, "#030712"],
+]);
+
 // ── Default fallbacks ───────────────────────────────────────────────
 
 const DEFAULT_FONT: FontData = {
@@ -135,9 +143,55 @@ function luminance(hex: string): number {
   return 0.2126 * srgb[0] + 0.7152 * srgb[1] + 0.0722 * srgb[2];
 }
 
+/** WCAG contrast ratio between two hex colors (1..21) */
+function contrastRatio(hex1: string, hex2: string): number {
+  const l1 = luminance(hex1);
+  const l2 = luminance(hex2);
+  const lighter = Math.max(l1, l2);
+  const darker = Math.min(l1, l2);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
 function isValidHex(value: string | null | undefined): value is string {
   if (!value) return false;
   return /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(value);
+}
+
+// ── Sanity checks ───────────────────────────────────────────────────
+
+/**
+ * Check if extracted color data is minimally usable.
+ * Returns false when Phase 0 produced garbage (e.g. white text on white bg).
+ */
+function isColorDataSane(colorData: ColorData): boolean {
+  const bg = colorData.backgrounds.page;
+  const heading = colorData.text.heading;
+
+  // 1. Background and heading must have minimum contrast (ratio >= 2.0)
+  if (isValidHex(bg) && isValidHex(heading)) {
+    if (contrastRatio(bg, heading) < 2.0) return false;
+  }
+
+  // 2. At least 3 distinct colors in the dataset
+  const allColors = new Set<string>();
+  for (const val of Object.values(colorData.backgrounds)) {
+    if (isValidHex(val)) allColors.add(val.toLowerCase());
+  }
+  for (const val of Object.values(colorData.text)) {
+    if (isValidHex(val)) allColors.add(val.toLowerCase());
+  }
+  for (const val of Object.values(colorData.accents)) {
+    if (isValidHex(val)) allColors.add(val.toLowerCase());
+  }
+  if (allColors.size < 3) return false;
+
+  // 3. Lightest and darkest must have meaningful luminance spread
+  const lightest = isValidHex(bg) ? bg : "#ffffff";
+  const darkest = isValidHex(heading) ? heading : "#111827";
+  const lumDiff = Math.abs(luminance(lightest) - luminance(darkest));
+  if (lumDiff < 0.1) return false;
+
+  return true;
 }
 
 // ── Interpolation ───────────────────────────────────────────────────
@@ -261,6 +315,19 @@ function buildPrimitiveScale(colorData: ColorData): PrimitiveScale {
     ? colorData.text.heading
     : "#111827";
 
+  // Sanity check: if lightest ≈ darkest, use Tailwind default gray scale
+  const lumDiff = Math.abs(luminance(lightest) - luminance(darkest));
+  if (lumDiff < 0.1) {
+    return {
+      grays: new Map(DEFAULT_GRAY_SCALE),
+      accent: isValidHex(colorData.accents.primary) ? colorData.accents.primary : "#2563eb",
+      accentText: isValidHex(colorData.accents.primaryText) ? colorData.accents.primaryText : "#ffffff",
+      white: "#ffffff",
+      black: "#000000",
+      link: isValidHex(colorData.text.link) ? colorData.text.link : null,
+    };
+  }
+
   // Collect all neutral-ish colors to detect the hue/saturation of grays
   const neutralSamples: string[] = [];
   for (const val of Object.values(colorData.backgrounds)) {
@@ -290,6 +357,10 @@ function buildPrimitiveScale(colorData: ColorData): PrimitiveScale {
   for (const { hex } of intermediates) {
     const step = closestGrayStep(hex, grays);
     if (step !== null) {
+      // Clamp: light steps (50-200) must stay light, dark steps (800-950) must stay dark
+      const snapLum = luminance(hex);
+      if (step <= 200 && snapLum <= 0.5) continue;  // too dark for a light step
+      if (step >= 800 && snapLum >= 0.3) continue;   // too light for a dark step
       grays.set(step, hex);
     }
   }
@@ -580,7 +651,7 @@ export function generateGlobalsCss(cwd: string, _mode: PipelineMode): string {
     join(cwd, ".claude/fonts/font-data.json"),
     DEFAULT_FONT,
   );
-  const colorData = readJsonSafe<ColorData>(
+  let colorData = readJsonSafe<ColorData>(
     join(cwd, ".claude/colors/color-data.json"),
     DEFAULT_COLORS,
   );
@@ -589,45 +660,73 @@ export function generateGlobalsCss(cwd: string, _mode: PipelineMode): string {
     null,
   );
 
-  // 2. Fill nulls with defaults for the light color data
+  // 2. Sanity check: if extracted colors are unusable, fall back entirely to defaults
+  if (!isColorDataSane(colorData)) {
+    colorData = DEFAULT_COLORS;
+  }
+
+  // 3. Fill nulls with defaults for the light color data
   const mergedColors = mergeColorDefaults(colorData);
 
-  // 3. Font faces
+  // 4. Font faces
   const fontFaceRules = buildFontFaces(fontData, cwd);
 
-  // 4. Font variables
+  // 5. Font variables
   const fontVars = buildFontVars(fontData.roles);
 
-  // 5. Primitive scale
+  // 6. Primitive scale
   const primitives = buildPrimitiveScale(mergedColors);
 
-  // 6. Semantic tokens (light)
+  // 7. Semantic tokens (light)
   const semantics = buildSemanticTokens(mergedColors, primitives);
 
-  // 7. Dark mode overrides
+  // 8. Dark mode overrides
   const darkOverrides = buildDarkOverrides(colorDataDark, primitives);
 
-  // 8. Tailwind theme bridge
+  // 9. Tailwind theme bridge
   const themeBridge = buildThemeBridge(fontVars);
 
-  // 9. Assemble
+  // 10. Assemble
   return assembleCss(fontFaceRules, fontVars, primitives, semantics, darkOverrides, themeBridge);
 }
 
-/** Merge null fields in color data with sensible defaults */
+/** Merge null fields in color data with sensible defaults, with per-field contrast checks */
 function mergeColorDefaults(data: ColorData): ColorData {
+  const pageBg = data.backgrounds.page ?? DEFAULT_COLORS.backgrounds.page!;
+
+  // --- Text fields with contrast awareness ---
+  let heading = data.text.heading ?? DEFAULT_COLORS.text.heading;
+  // If heading is the same color as page bg (no contrast), use default
+  if (isValidHex(heading) && isValidHex(pageBg) && contrastRatio(heading, pageBg) < 2.0) {
+    heading = DEFAULT_COLORS.text.heading;
+  }
+
+  let body = data.text.body ?? DEFAULT_COLORS.text.body;
+  if (isValidHex(body) && isValidHex(pageBg) && contrastRatio(body, pageBg) < 2.0) {
+    body = DEFAULT_COLORS.text.body;
+  }
+
+  let link = data.text.link ?? DEFAULT_COLORS.text.link;
+  // White link on white bg → use default blue
+  if (isValidHex(link) && isValidHex(pageBg) && contrastRatio(link, pageBg) < 2.0) {
+    link = DEFAULT_COLORS.text.link;
+  }
+
+  // Muted: if null, derive from midpoint of gray scale (will be resolved by buildPrimitiveScale)
+  const muted = data.text.muted ?? DEFAULT_COLORS.text.muted;
+
   return {
     backgrounds: {
-      page: data.backgrounds.page ?? DEFAULT_COLORS.backgrounds.page,
+      page: pageBg,
       header: data.backgrounds.header ?? DEFAULT_COLORS.backgrounds.header,
       card: data.backgrounds.card ?? DEFAULT_COLORS.backgrounds.card,
       footer: data.backgrounds.footer ?? DEFAULT_COLORS.backgrounds.footer,
     },
     text: {
-      heading: data.text.heading ?? DEFAULT_COLORS.text.heading,
-      body: data.text.body ?? DEFAULT_COLORS.text.body,
-      muted: data.text.muted ?? DEFAULT_COLORS.text.muted,
-      link: data.text.link ?? DEFAULT_COLORS.text.link,
+      heading,
+      body,
+      muted,
+      link,
     },
     accents: {
       primary: data.accents.primary ?? DEFAULT_COLORS.accents.primary,
