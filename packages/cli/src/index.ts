@@ -47,4 +47,14 @@ program
     });
   });
 
+program
+  .command("start")
+  .alias("init")
+  .description("Interactive project setup wizard")
+  .option("-d, --dir <path>", "Target directory (defaults to cwd)")
+  .action(async (opts: Record<string, string>) => {
+    const { startCommand } = await import("./commands/start.js");
+    await startCommand({ dir: opts.dir });
+  });
+
 program.parse();
