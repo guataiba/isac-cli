@@ -28,6 +28,7 @@ const mockAdapter: FrameworkAdapter = {
   getDesignSystemTemplates: () => [],
   getDesignTokensCssTemplate: () => "",
   getDesignSystemDataTemplate: () => "",
+  getStubDataTemplate: () => ({ path: "src/design-system/data.ts", content: "" }),
   validateTokenExtraction: () => ({ valid: true }),
   postProcessTokenExtraction: () => {},
   validateDesignSystem: () => ({ valid: true }),
