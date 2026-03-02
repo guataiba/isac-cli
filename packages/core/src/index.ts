@@ -25,6 +25,7 @@ export {
   PHASE_3_TOOLS,
   PHASE_4_TOOLS,
 } from "./pipeline/tools.js";
+export { enableMcp, disableMcp } from "./pipeline/mcp-config.js";
 
 // ── UI ──────────────────────────────────────────────────────
 export { log } from "./ui/logger.js";

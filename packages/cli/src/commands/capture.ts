@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import chalk from "chalk";
 import {
+  disableMcp,
   ensureClaude,
   printBanner,
   log,
@@ -85,11 +86,16 @@ export async function captureCommand(
 
   // Handle Ctrl+C gracefully
   const cleanup = () => {
+    disableMcp(dir);
     console.log(chalk.dim("\n\n  Interrupted. Exiting..."));
     process.exit(130);
   };
+  const cleanupOnExit = () => {
+    disableMcp(dir);
+  };
   process.on("SIGINT", cleanup);
   process.on("SIGTERM", cleanup);
+  process.on("exit", cleanupOnExit);
 
   try {
     const result = await runPipeline({
@@ -137,12 +143,14 @@ export async function captureCommand(
       console.log(chalk.dim(`  Run: npm run dev → ${devUrl}\n`));
     }
   } catch (err) {
+    disableMcp(dir);
     const msg = err instanceof Error ? err.message : String(err);
     console.error(chalk.red(`\n  Pipeline error: ${msg}`));
     process.exit(1);
   } finally {
     process.removeListener("SIGINT", cleanup);
     process.removeListener("SIGTERM", cleanup);
+    process.removeListener("exit", cleanupOnExit);
   }
 }
 

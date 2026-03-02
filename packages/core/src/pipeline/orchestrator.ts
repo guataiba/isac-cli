@@ -1,60 +1,15 @@
 import { join, dirname } from "node:path";
-import { mkdirSync, writeFileSync, existsSync, readFileSync, unlinkSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { runPhase0, createPhase0EventHandler } from "./phase-0-screenshot.js";
 import { runPhase1a } from "./phase-1a-tokens.js";
 import { runPhase1b } from "./phase-1b-design-system.js";
 import { runPhase2 } from "./phase-2-planning.js";
 import { runPhase3 } from "./phase-3-implementation.js";
 import { runPhase4 } from "./phase-4-verification.js";
+import { enableMcp, disableMcp } from "./mcp-config.js";
 import { log } from "../ui/logger.js";
 import { setPhase, succeedPhase, failPhase, renderEvent, stopSpinner, getTotalCost } from "../ui/tui.js";
 import type { PipelineContext, PipelineOptions, PipelineResult, PhaseResult } from "./types.js";
-
-/**
- * Write/remove `.mcp.json` in the target directory so that the Claude CLI
- * only tries to connect to chrome-devtools MCP for phases that need it.
- * Without this, the CLI hangs waiting for the MCP server on every phase.
- */
-function enableMcp(cwd: string): void {
-  const mcpConfigPath = join(cwd, ".mcp.json");
-  let mcpConfig: Record<string, unknown> = {};
-  if (existsSync(mcpConfigPath)) {
-    try {
-      mcpConfig = JSON.parse(readFileSync(mcpConfigPath, "utf-8"));
-    } catch { /* ignore malformed */ }
-  }
-  const servers = (mcpConfig.mcpServers as Record<string, unknown>) ?? {};
-  if (!servers["chrome-devtools"]) {
-    servers["chrome-devtools"] = {
-      command: "npx",
-      args: [
-        "-y", "chrome-devtools-mcp@latest",
-        "--headless",   // No UI needed — faster startup in automation
-        "--isolated",   // Temp profile per run — avoids Chrome profile lock conflicts
-      ],
-    };
-    mcpConfig.mcpServers = servers;
-    writeFileSync(mcpConfigPath, JSON.stringify(mcpConfig, null, 2) + "\n", "utf-8");
-  }
-}
-
-function disableMcp(cwd: string): void {
-  const mcpConfigPath = join(cwd, ".mcp.json");
-  if (!existsSync(mcpConfigPath)) return;
-  try {
-    const mcpConfig = JSON.parse(readFileSync(mcpConfigPath, "utf-8")) as Record<string, unknown>;
-    const servers = mcpConfig.mcpServers as Record<string, unknown> | undefined;
-    if (servers?.["chrome-devtools"]) {
-      delete servers["chrome-devtools"];
-      if (Object.keys(servers).length === 0) {
-        unlinkSync(mcpConfigPath);
-      } else {
-        mcpConfig.mcpServers = servers;
-        writeFileSync(mcpConfigPath, JSON.stringify(mcpConfig, null, 2) + "\n", "utf-8");
-      }
-    }
-  } catch { /* ignore */ }
-}
 
 /** Write design system template files to disk, overwriting any model-generated versions */
 function writeDesignSystemTemplates(ctx: PipelineContext): void {
@@ -136,12 +91,16 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
   // Phase 0: Screenshots + Font Extraction (own session, needs chrome-devtools)
   // ═══════════════════════════════════════════════
   enableMcp(ctx.cwd);
-  setPhase(ctx.mode === "replicate"
-    ? "Capturing screenshots + fonts..."
-    : "Extracting design data...");
-  const phase0OnEvent = createPhase0EventHandler(ctx, onEvent);
-  const phase0 = await runPhase0(ctx, phase0OnEvent);
-  disableMcp(ctx.cwd);
+  let phase0: PhaseResult;
+  try {
+    setPhase(ctx.mode === "replicate"
+      ? "Capturing screenshots + fonts..."
+      : "Extracting design data...");
+    const phase0OnEvent = createPhase0EventHandler(ctx, onEvent);
+    phase0 = await runPhase0(ctx, phase0OnEvent);
+  } finally {
+    disableMcp(ctx.cwd);
+  }
   phases.push(phase0);
   if (!phase0.success) {
     failPhase(ctx.mode === "replicate"
