@@ -1,0 +1,51 @@
+{
+  "fontFaces": [
+    {
+      "family": "Jetbrains Mono",
+      "url": "https://cdn.prod.website-files.com/67ce28cfec624e2b733f8a52/691cda762a35b6bc5a28ffaa_JetBrainsMono-Regular.woff2",
+      "weight": "400",
+      "style": "normal"
+    },
+    {
+      "family": "Anthropic Sans",
+      "url": "https://cdn.prod.website-files.com/67ce28cfec624e2b733f8a52/69971a00a3295036497e1a28_AnthropicSans-Roman-Web.woff2",
+      "weight": "300 800",
+      "style": "normal"
+    },
+    {
+      "family": "Anthropic Sans",
+      "url": "https://cdn.prod.website-files.com/67ce28cfec624e2b733f8a52/69971a016067bf14b9b8f48d_AnthropicSans-Italic-Web.woff2",
+      "weight": "300 800",
+      "style": "italic"
+    },
+    {
+      "family": "Anthropic Serif",
+      "url": "https://cdn.prod.website-files.com/67ce28cfec624e2b733f8a52/69971a1551eb6cda0d656e8a_AnthropicSerif-Roman-Web.woff2",
+      "weight": "300 800",
+      "style": "normal"
+    },
+    {
+      "family": "Anthropic Serif",
+      "url": "https://cdn.prod.website-files.com/67ce28cfec624e2b733f8a52/69971a15a9fb8c1107a3570e_AnthropicSerif-Italic-Web.woff2",
+      "weight": "300 800",
+      "style": "italic"
+    },
+    {
+      "family": "Anthropic Mono",
+      "url": "https://cdn.prod.website-files.com/67ce28cfec624e2b733f8a52/69971a2e55d24d61bc045b1a_AnthropicMono-Roman-Web.woff2",
+      "weight": "300 800",
+      "style": "normal"
+    },
+    {
+      "family": "Anthropic Mono",
+      "url": "https://cdn.prod.website-files.com/67ce28cfec624e2b733f8a52/69971a2eb93743112c30fe9c_AnthropicMono-Italic-Web.woff2",
+      "weight": "300 800",
+      "style": "italic"
+    }
+  ],
+  "roles": {
+    "body": "\"Anthropic Serif\", Georgia, sans-serif",
+    "heading": "\"Anthropic Sans\", Arial, sans-serif",
+    "mono": "\"Anthropic Mono\", Arial, sans-serif"
+  }
+}

@@ -12,30 +12,46 @@ ISAC extracts the Brand DNA from any live website — fonts, colors, design toke
 | [`@guataiba/isac-core`](https://www.npmjs.com/package/@guataiba/isac-core) | [![npm](https://img.shields.io/npm/v/@guataiba/isac-core)](https://www.npmjs.com/package/@guataiba/isac-core) | Framework-agnostic pipeline engine |
 | [`@guataiba/isac-nextjs`](https://www.npmjs.com/package/@guataiba/isac-nextjs) | [![npm](https://img.shields.io/npm/v/@guataiba/isac-nextjs)](https://www.npmjs.com/package/@guataiba/isac-nextjs) | Next.js (App Router) adapter |
 
-## Prerequisites
+## Quick start
+
+### Prerequisites
 
 - **Claude Code** 1.0.33+ ([download](https://claude.ai/download))
 - **Google Chrome** installed (used for color extraction via Playwright and Chrome DevTools MCP)
-- A **Next.js** project with `app/globals.css`
-- Node.js 18+
+- **Node.js** 18+
 
-## Installation
+### Install the CLI globally
 
 ```bash
 npm install -g @guataiba/isac-cli
 ```
 
+### Run it
+
+ISAC works **inside an existing Next.js project**. You need to scaffold one first, then run ISAC inside it:
+
+```bash
+# 1. Create a Next.js project (required — ISAC does NOT scaffold projects)
+npx create-next-app@latest my-app
+cd my-app
+
+# 2. Extract a design system from any website
+isac capture https://example.com
+```
+
+That's it. ISAC will extract the design system from the URL and generate files inside your project.
+
+> **Important:** Always run `npx create-next-app@latest` first. ISAC expects an existing Next.js project with `app/globals.css`, `package.json`, and dependencies installed.
+
 ## Usage
 
 ### Design system extraction (default)
-
-Inside a Next.js project:
 
 ```bash
 isac capture <url>
 ```
 
-This extracts fonts, colors, branding, and icons from the target URL, generates `globals.css` with design tokens, and builds a visual design system documentation page.
+Extracts fonts, colors, branding, and icons from the target URL, generates `globals.css` with design tokens, and builds a visual design system documentation page.
 
 ### Full page build
 
@@ -51,6 +67,8 @@ Goes further: captures full-page screenshots, plans the page structure, builds t
 isac start
 ```
 
+Walks you through creating an `isac.config.json` with your project preferences (framework, CSS strategy, component library, icon library).
+
 ### Options
 
 | Flag | Description |
@@ -60,6 +78,73 @@ isac start
 | `--framework <name>` | Framework adapter (default: `nextjs`) |
 | `--max-retries <n>` | Max verification retries (default: 3) |
 | `--stop-after <phase>` | Stop after: `screenshots`, `design-system`, or `planning` |
+
+## Try it from scratch
+
+```bash
+# 1. Create a fresh Next.js project
+npx create-next-app@latest my-app
+cd my-app
+
+# 2. Install the CLI
+npm install -g @guataiba/isac-cli
+
+# 3. Extract a design system from any website
+isac capture https://example.com
+
+# 4. Or do a full page replication
+isac capture https://example.com --replicate
+```
+
+## Local development
+
+This is a **pnpm monorepo**. All three packages (`core`, `nextjs`, `cli`) are built with [tsup](https://github.com/egoist/tsup) and linked via `workspace:*` dependencies.
+
+### Setup
+
+```bash
+# Install all dependencies (requires pnpm 9+)
+pnpm install
+
+# Build all packages (core → nextjs → cli)
+pnpm build
+```
+
+### Development with watch mode
+
+```bash
+# Rebuild all packages on file changes
+pnpm dev
+```
+
+This runs `tsup --watch` in parallel across all packages, so changes in `core` or `nextjs` are immediately reflected in the CLI.
+
+### Running tests
+
+```bash
+pnpm test
+```
+
+### Type checking
+
+```bash
+pnpm typecheck
+```
+
+### Project structure
+
+```
+isac-cli/
+├── packages/
+│   ├── core/       # Pipeline engine, CSS generator, color extractor (Playwright), prompts
+│   ├── nextjs/     # Next.js App Router adapter (templates, prompts, file paths)
+│   └── cli/        # CLI entry point — bundles core + nextjs into a single executable
+├── examples/
+│   ├── capture/anthropic-com/    # Design system extraction example
+│   └── replicate/anthropic-com/  # Full page replication example
+├── package.json         # Root workspace scripts
+└── pnpm-workspace.yaml  # Workspace configuration
+```
 
 ## What it produces
 
@@ -101,20 +186,22 @@ isac start
 In **design-system** mode (default), the pipeline runs Phase 0 → 1A → 1B and stops.
 In **replicate** mode, it runs all phases (0 → 1A → 1B+2 → 3 → 4).
 
-## Architecture
+## Examples
 
+| Example | Description |
+|---|---|
+| [`examples/capture/anthropic-com/`](examples/capture/anthropic-com/) | Design system extraction from [anthropic.com](https://www.anthropic.com/) |
+| [`examples/replicate/anthropic-com/`](examples/replicate/anthropic-com/) | Full landing page replication from [anthropic.com](https://www.anthropic.com/) |
+
+Each example was scaffolded with `npx create-next-app@latest` and then processed with the corresponding `isac` command. They contain the full ISAC output — `globals.css`, design system docs, extracted data, and (in replicate mode) the replicated landing page.
+
+To recreate an example from scratch:
+
+```bash
+npx create-next-app@latest my-app && cd my-app
+isac capture https://www.anthropic.com/            # design system only
+isac replicate https://www.anthropic.com/          # full page replication
 ```
-packages/
-  core/     → Pipeline engine, css-generator, color-extractor (Playwright), prompts, templates
-  nextjs/   → Next.js App Router adapter (prompts, templates, file structure)
-  cli/      → CLI entry point, bundles core + nextjs
-examples/
-  claude-on-mars/  → Complete capture example
-```
-
-## Example output
-
-See [`examples/claude-on-mars/`](examples/claude-on-mars/) for a complete Brand DNA extraction example.
 
 ## Roadmap
 

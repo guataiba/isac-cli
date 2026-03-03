@@ -1,5 +1,28 @@
-import { spawn } from "node:child_process";
+import { spawn, execSync } from "node:child_process";
+import { resolve as resolvePath, dirname } from "node:path";
 import type { PhaseConfig, PhaseOutput } from "./types.js";
+
+/**
+ * Resolve the claude CLI entry point for spawning.
+ * On Windows, `spawn("claude")` fails because the shim is a shell script.
+ * We resolve the actual cli.js path and spawn node directly.
+ */
+function resolveClaudeCommand(): { command: string; prefix: string[] } {
+  if (process.platform !== "win32") {
+    return { command: "claude", prefix: [] };
+  }
+
+  try {
+    // `where claude` returns the shim path (e.g. C:\nvm4w\nodejs\claude.cmd)
+    const shimPath = execSync("where claude", { encoding: "utf-8" }).split("\n")[0].trim();
+    const shimDir = dirname(shimPath);
+    const cliJs = resolvePath(shimDir, "node_modules", "@anthropic-ai", "claude-code", "cli.js");
+    return { command: process.execPath, prefix: [cliJs] };
+  } catch {
+    // Fallback: try shell mode
+    return { command: "claude", prefix: [] };
+  }
+}
 
 export async function runClaudePhase(
   config: PhaseConfig,
@@ -34,6 +57,8 @@ export async function runClaudePhase(
   // Pass prompt via -p flag
   args.push("-p", config.prompt);
 
+  const { command, prefix } = resolveClaudeCommand();
+
   return new Promise<PhaseOutput>((resolve, reject) => {
     const timeout = config.timeout ?? 600_000; // 10 min default
     const startupTimeout = 120_000; // 120s for initial startup (MCP + Chrome can be slow)
@@ -44,10 +69,14 @@ export async function runClaudePhase(
     let costUsd: number | undefined;
     let gotActivity = false;
 
-    const proc = spawn("claude", args, {
+    // Strip CLAUDECODE env var to allow spawning from within a Claude Code session
+    const env = { ...process.env };
+    delete env.CLAUDECODE;
+
+    const proc = spawn(command, [...prefix, ...args], {
       cwd,
       stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env },
+      env,
     });
 
     // Overall timeout
