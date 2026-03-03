@@ -631,12 +631,12 @@ function hasAnyColor(data: ColorData): boolean {
 
 function buildThemeBridge(fontVars: { fontSans: string; fontMono: string }): string {
   // Tailwind v4 @theme inline block
-  // Use var() references to the CSS variables for font-sans and font-mono
+  // Use explicit font values to avoid self-referential var(--font-sans) → --font-sans
   return `@theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
-  --font-mono: var(--font-mono);
+  --font-sans: ${fontVars.fontSans};
+  --font-mono: ${fontVars.fontMono};
 }`;
 }
 

@@ -68,8 +68,6 @@ export function createPhase0EventHandler(
   ctx: PipelineContext,
   outerOnEvent?: (event: Record<string, unknown>) => void,
 ): (event: Record<string, unknown>) => void {
-  let evalScriptCount = 0;
-
   return (event: Record<string, unknown>) => {
     // Always forward to the outer handler (renderEvent via orchestrator)
     if (outerOnEvent) outerOnEvent(event);
@@ -84,12 +82,13 @@ export function createPhase0EventHandler(
     } else if (toolName.includes("emulate")) {
       updateStatus("Emulating dark mode...");
     } else if (toolName.includes("evaluate_script")) {
-      evalScriptCount++;
-      if (evalScriptCount <= 4) {
+      // Determine substep from which artifact files already exist on disk
+      // rather than counting tool calls (which breaks if the prompt changes).
+      if (!existsSync(join(ctx.cwd, ".claude/fonts/font-data.json"))) {
         updateStatus("Extracting fonts...");
-      } else if (evalScriptCount === 5) {
+      } else if (!existsSync(join(ctx.cwd, ".claude/branding/brand-data.json"))) {
         updateStatus("Extracting brand data...");
-      } else if (evalScriptCount === 6) {
+      } else if (!existsSync(join(ctx.cwd, ".claude/icons/icon-data.json"))) {
         updateStatus("Extracting icons...");
       } else {
         updateStatus("Extracting colors...");
