@@ -1,0 +1,24 @@
+{
+  "backgrounds": {
+    "page": "#faf9f5",
+    "header": "#000000",
+    "card": null,
+    "footer": "#141413"
+  },
+  "text": {
+    "heading": "#141413",
+    "body": "#141413",
+    "muted": null,
+    "link": "#141413"
+  },
+  "accents": {
+    "primary": "#d97757",
+    "primaryText": "#ffffff"
+  },
+  "borders": {
+    "default": null
+  },
+  "surfaces": {
+    "input": null
+  }
+}
