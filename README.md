@@ -2,7 +2,9 @@
 
 ISAC extracts the Brand DNA from any live website — fonts, colors, design tokens, branding, and icons — and generates a production-ready design system for your Next.js project. Powered by Claude Code.
 
-[![Watch the demo](https://img.youtube.com/vi/uMwzfATF7IE/maxresdefault.jpg)](https://youtu.be/uMwzfATF7IE)
+![ISAC benchmark — design system extraction in ~6s, $0.00 API cost](https://s3.sa-east-1.amazonaws.com/download.metricasboss.com.br/export-1772621841033.gif)
+
+[![Watch the full demo](https://img.youtube.com/vi/uMwzfATF7IE/maxresdefault.jpg)](https://youtu.be/uMwzfATF7IE)
 
 ## Packages
 
@@ -15,7 +17,7 @@ ISAC extracts the Brand DNA from any live website — fonts, colors, design toke
 ## Prerequisites
 
 - **Claude Code** 1.0.33+ ([download](https://claude.ai/download))
-- **Google Chrome** installed (used for color extraction via Playwright and Chrome DevTools MCP)
+- **Google Chrome** installed (used by agent-browser for color/font/icon extraction)
 - A **Next.js** project with `app/globals.css`
 - Node.js 18+
 
@@ -91,12 +93,12 @@ isac start
 
 | Phase | What it does | Powered by |
 |---|---|---|
-| **Phase 0** | Navigate to URL, extract fonts/branding/icons via Claude, extract colors deterministically via Playwright | Claude + Chrome DevTools MCP + Playwright |
+| **Phase 0** | Navigate to URL, extract fonts/colors/branding/icons and capture screenshots | agent-browser (deterministic, $0.00) |
 | **Phase 1A** | Generate `globals.css` from extracted JSON data | Pure TypeScript (no LLM) |
-| **Phase 1B** | Build design system documentation (`data.ts`) | Claude |
+| **Phase 1B** | Build design system documentation (`data.ts`) | Pure TypeScript (no LLM) |
 | **Phase 2** | Plan page structure from screenshots | Claude |
 | **Phase 3** | Implement the page | Claude |
-| **Phase 4** | Visual verification with correction loop | Claude + Chrome DevTools MCP |
+| **Phase 4** | Visual verification with correction loop | Claude + agent-browser |
 
 In **design-system** mode (default), the pipeline runs Phase 0 → 1A → 1B and stops.
 In **replicate** mode, it runs all phases (0 → 1A → 1B+2 → 3 → 4).
@@ -105,8 +107,8 @@ In **replicate** mode, it runs all phases (0 → 1A → 1B+2 → 3 → 4).
 
 ```
 packages/
-  core/     → Pipeline engine, css-generator, color-extractor (Playwright), prompts, templates
-  nextjs/   → Next.js App Router adapter (prompts, templates, file structure)
+  core/     → Pipeline engine, css-generator, color-extractor, section catalog, prompts
+  nextjs/   → Next.js App Router adapter (prompts, templates, renderers)
   cli/      → CLI entry point, bundles core + nextjs
 examples/
   claude-on-mars/  → Complete capture example

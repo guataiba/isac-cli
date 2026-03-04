@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { execSync, spawn } from "node:child_process";
 import { join, dirname } from "node:path";
 import type { FrameworkAdapter, TemplateFile, PhaseValidation, PipelineMode, PagePlan } from "@guataiba/isac-core";
 import { DESIGN_TOKENS_CSS_TEMPLATE } from "@guataiba/isac-core";
@@ -466,12 +467,38 @@ export const nextjsAdapter: FrameworkAdapter = {
       }
     }
 
-    // Touch globals.css to ensure Turbopack's file watcher picks up the final version.
-    // Writing the same content with a trailing newline forces a filesystem timestamp change.
-    const globalsPath = join(cwd, "app/globals.css");
-    if (existsSync(globalsPath)) {
-      const content = readFileSync(globalsPath, "utf-8");
-      writeFileSync(globalsPath, content, "utf-8");
+    // Kill any running Next.js dev server, clear Turbopack cache, and restart.
+    // Turbopack keeps an in-memory + on-disk cache (.next/) that becomes corrupted
+    // when ISAC rewrites template files externally. The only reliable fix is a
+    // full restart with a clean cache.
+    const nextDir = join(cwd, ".next");
+
+    // Find and kill Next.js dev server process on port 3000
+    try {
+      const pid = execSync("lsof -ti :3000", { stdio: "pipe", timeout: 3_000 })
+        .toString().trim();
+      if (pid) {
+        for (const p of pid.split("\n")) {
+          try { execSync(`kill ${p.trim()}`, { stdio: "pipe", timeout: 2_000 }); } catch { /* already dead */ }
+        }
+        // Give it a moment to release the port
+        execSync("sleep 1", { stdio: "pipe" });
+      }
+    } catch { /* no process on port 3000 */ }
+
+    // Remove stale Turbopack cache
+    if (existsSync(nextDir)) {
+      rmSync(nextDir, { recursive: true, force: true });
     }
+
+    // Restart dev server in background (detached, won't block the pipeline)
+    try {
+      const child = spawn("npm", ["run", "dev"], {
+        cwd,
+        stdio: "ignore",
+        detached: true,
+      });
+      child.unref();
+    } catch { /* non-fatal — user can start manually */ }
   },
 };
