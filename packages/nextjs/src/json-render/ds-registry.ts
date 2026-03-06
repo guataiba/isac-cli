@@ -27,8 +27,17 @@ export const { registry: dsRegistry } = defineRegistry(dsCatalog, {
   components: {
     DSPage: ({ props, children }) => {
       return React.createElement("div", {
-        style: { maxWidth: 960, margin: "0 auto", padding: "48px 24px", fontFamily: fonts.sans, color: "var(--color-text-primary)" },
-      }, children);
+        style: {
+          minHeight: "100vh",
+          background: props.pageBackground || "var(--color-bg-primary)",
+          fontFamily: fonts.sans,
+          color: "var(--color-text-primary)",
+        },
+      },
+        React.createElement("div", {
+          style: { maxWidth: 960, margin: "0 auto", padding: "48px 24px" },
+        }, children),
+      );
     },
 
     DSHeader: ({ props }) => {

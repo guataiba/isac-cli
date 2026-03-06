@@ -12,6 +12,7 @@ export const dsCatalog = defineCatalog(schema, {
       props: z.object({
         siteName: z.string(),
         domain: z.string(),
+        pageBackground: z.string().optional(),
       }),
       slots: ["default"],
       description: "Root wrapper for the design system documentation page.",

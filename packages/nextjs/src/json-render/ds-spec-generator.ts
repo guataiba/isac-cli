@@ -381,7 +381,7 @@ export function generateDesignSystemSpec(cwd: string, url: string): DSSpec {
   // Page root
   elements["page"] = {
     type: "DSPage",
-    props: { siteName, domain },
+    props: { siteName, domain, pageBackground },
     children,
   };
 
@@ -444,7 +444,7 @@ import { z } from "zod";
 export const dsCatalog = defineCatalog(schema, {
   components: {
     DSPage: {
-      props: z.object({ siteName: z.string(), domain: z.string() }),
+      props: z.object({ siteName: z.string(), domain: z.string(), pageBackground: z.string().optional() }),
       slots: ["default"],
       description: "Root wrapper for the design system documentation page.",
     },
@@ -596,8 +596,10 @@ export const { registry: dsRegistry } = defineRegistry(dsCatalog, {
   components: {
     DSPage: ({ props, children }) => {
       return React.createElement("div", {
-        style: { maxWidth: 960, margin: "0 auto", padding: "48px 24px", fontFamily: fonts.sans, color: "var(--color-text-primary)" },
-      }, children);
+        style: { minHeight: "100vh", background: props.pageBackground || "var(--color-bg-primary)", fontFamily: fonts.sans, color: "var(--color-text-primary)" },
+      },
+        React.createElement("div", { style: { maxWidth: 960, margin: "0 auto", padding: "48px 24px" } }, children),
+      );
     },
     DSHeader: ({ props }) => {
       return React.createElement("header", { style: { marginBottom: 32 } },
