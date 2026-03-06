@@ -130,18 +130,38 @@ export function generateDesignSystemSpec(cwd: string, url: string): DSSpec {
     .filter(([, tokens]) => tokens.length > 0)
     .map(([category, tokens]) => ({ category, tokens }));
 
-  // ── Parse spacing ──
+  // ── Parse spacing (with defaults) ──
   const spacingItems: { label: string; px: string }[] = [];
   const spaceRegex = /--space-([\w-]+):\s*([^;]+);/g;
   while ((m = spaceRegex.exec(css)) !== null) {
     spacingItems.push({ label: m[1], px: m[2].trim() });
   }
+  if (spacingItems.length === 0) {
+    spacingItems.push(
+      { label: "1", px: "4px" },
+      { label: "2", px: "8px" },
+      { label: "3", px: "12px" },
+      { label: "4", px: "16px" },
+      { label: "6", px: "24px" },
+      { label: "8", px: "32px" },
+      { label: "12", px: "48px" },
+      { label: "16", px: "64px" },
+    );
+  }
 
-  // ── Parse shadows ──
+  // ── Parse shadows (with defaults) ──
   const shadowItems: { label: string; value: string }[] = [];
   const shadowRegex = /--shadow-([\w-]+):\s*([^;]+);/g;
   while ((m = shadowRegex.exec(css)) !== null) {
     shadowItems.push({ label: m[1], value: m[2].trim() });
+  }
+  if (shadowItems.length === 0) {
+    shadowItems.push(
+      { label: "sm", value: "0 1px 2px rgba(0,0,0,0.05)" },
+      { label: "md", value: "0 4px 12px rgba(0,0,0,0.08)" },
+      { label: "lg", value: "0 8px 24px rgba(0,0,0,0.1)" },
+      { label: "xl", value: "0 16px 48px rgba(0,0,0,0.12)" },
+    );
   }
 
   // ── Static radii ──
