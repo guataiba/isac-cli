@@ -32,7 +32,7 @@ export const { registry: dsRegistry } = defineRegistry(dsCatalog, {
     },
 
     DSHeader: ({ props }) => {
-      return React.createElement("header", { style: { marginBottom: 64 } },
+      return React.createElement("header", { style: { marginBottom: 32 } },
         React.createElement("h1", {
           style: { fontFamily: fonts.display, fontSize: 48, fontWeight: 700, letterSpacing: "-0.02em", marginBottom: 8 },
         }, "Design System"),
@@ -42,6 +42,35 @@ export const { registry: dsRegistry } = defineRegistry(dsCatalog, {
           " — with dark mode support",
         ),
       );
+    },
+
+    DSTabs: ({ props, children }) => {
+      const [active, setActive] = React.useState(props.defaultTab ?? 0);
+      const panels = React.Children.toArray(children);
+      return React.createElement("div", null,
+        React.createElement("nav", {
+          style: { display: "flex", gap: 0, borderBottom: "1px solid var(--color-border-primary)", marginBottom: 40, overflowX: "auto" as const, WebkitOverflowScrolling: "touch" as const },
+        },
+          ...props.tabs.map((label: string, i: number) =>
+            React.createElement("button", {
+              key: label,
+              onClick: () => setActive(i),
+              style: {
+                padding: "12px 20px", fontSize: 14, fontWeight: active === i ? 600 : 400, fontFamily: fonts.sans,
+                color: active === i ? "var(--color-accent)" : "var(--color-text-secondary)",
+                background: "transparent", border: "none", borderBottom: active === i ? "2px solid var(--color-accent)" : "2px solid transparent",
+                cursor: "pointer", whiteSpace: "nowrap" as const, transition: "color 0.15s, border-color 0.15s",
+                marginBottom: -1,
+              },
+            }, label),
+          ),
+        ),
+        panels[active] ?? null,
+      );
+    },
+
+    DSTabPanel: ({ props, children }) => {
+      return React.createElement("div", null, children);
     },
 
     DSBrandIdentity: ({ props }) => {

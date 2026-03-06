@@ -25,6 +25,21 @@ export const dsCatalog = defineCatalog(schema, {
       description: "Design system page header with title and subtitle.",
     },
 
+    DSTabs: {
+      props: z.object({
+        tabs: z.array(z.string()),
+        defaultTab: z.number().optional(),
+      }),
+      slots: ["default"],
+      description: "Tab container that shows one child panel at a time.",
+    },
+
+    DSTabPanel: {
+      props: z.object({}),
+      slots: ["default"],
+      description: "Wrapper for content inside a tab.",
+    },
+
     DSBrandIdentity: {
       props: z.object({
         name: z.string(),

@@ -194,7 +194,7 @@ export function generateDesignSystemSpec(cwd: string, url: string): DSSpec {
     props: { siteName, domain },
   };
 
-  // Brand Identity (only if there's data)
+  // Brand Identity (only if there's data — outside tabs)
   if (logoUrl || tagline || description) {
     children.push("brand");
     elements["brand"] = {
@@ -203,9 +203,14 @@ export function generateDesignSystemSpec(cwd: string, url: string): DSSpec {
     };
   }
 
-  // Color Palette
+  // ── Tabs ──
+  const tabNames: string[] = [];
+  const tabPanelIds: string[] = [];
+
+  // Tab 1: Colors
+  const colorsChildren: string[] = [];
   if (primitives.length > 0) {
-    children.push("palette");
+    colorsChildren.push("palette");
     elements["palette"] = {
       type: "DSColorPalette",
       props: {
@@ -215,10 +220,8 @@ export function generateDesignSystemSpec(cwd: string, url: string): DSSpec {
       },
     };
   }
-
-  // Semantic Tokens
   if (semanticGroups.length > 0) {
-    children.push("semantics");
+    colorsChildren.push("semantics");
     elements["semantics"] = {
       type: "DSSemanticTokens",
       props: {
@@ -228,93 +231,89 @@ export function generateDesignSystemSpec(cwd: string, url: string): DSSpec {
       },
     };
   }
+  if (colorsChildren.length > 0) {
+    tabNames.push("Colors");
+    tabPanelIds.push("tab-colors");
+    elements["tab-colors"] = { type: "DSTabPanel", props: {}, children: colorsChildren };
+  }
 
-  // Typography
-  children.push("typography");
+  // Tab 2: Typography
+  tabNames.push("Typography");
+  tabPanelIds.push("tab-typography");
   elements["typography"] = {
     type: "DSTypography",
     props: { title: "Typography", families, sizes, weights },
   };
+  elements["tab-typography"] = { type: "DSTabPanel", props: {}, children: ["typography"] };
 
-  // Spacing
+  // Tab 3: Spacing & Shape
+  const spacingChildren: string[] = [];
   if (spacingItems.length > 0) {
-    children.push("spacing");
+    spacingChildren.push("spacing");
     elements["spacing"] = {
       type: "DSSpacing",
       props: { title: "Spacing", items: spacingItems },
     };
   }
-
-  // Radii
-  children.push("radii");
+  spacingChildren.push("radii");
   elements["radii"] = {
     type: "DSRadii",
     props: { title: "Border Radius", items: radiiItems },
   };
-
-  // Shadows
   if (shadowItems.length > 0) {
-    children.push("shadows");
+    spacingChildren.push("shadows");
     elements["shadows"] = {
       type: "DSShadows",
       props: { title: "Shadows", items: shadowItems },
     };
   }
+  tabNames.push("Spacing & Shape");
+  tabPanelIds.push("tab-spacing");
+  elements["tab-spacing"] = { type: "DSTabPanel", props: {}, children: spacingChildren };
 
-  // Components
-  children.push("components");
+  // Tab 4: Components
+  const componentsChildren: string[] = ["components"];
   elements["components"] = {
     type: "DSComponents",
     props: { title: "Components" },
   };
-
-  // Icons
   if (iconCount > 0) {
-    children.push("icons");
+    componentsChildren.push("icons");
     elements["icons"] = {
       type: "DSIcons",
       props: { title: "Icons", library: iconLibrary, count: iconCount, names: iconNames },
     };
   }
+  tabNames.push("Components");
+  tabPanelIds.push("tab-components");
+  elements["tab-components"] = { type: "DSTabPanel", props: {}, children: componentsChildren };
 
-  // ── Layout Examples ──
-  children.push("examples-header");
+  // Tab 5: Layout Examples
+  tabNames.push("Layout Examples");
+  tabPanelIds.push("tab-examples");
   elements["examples-header"] = {
     type: "DSExamplesHeader",
     props: {
       title: "Layout Examples",
-      subtitle: "See the design system in action. These example sections demonstrate how the extracted tokens apply to real page layouts.",
+      subtitle: "See the design system in action with realistic page sections.",
     },
   };
-
-  children.push("hero-example");
-  elements["hero-example"] = {
-    type: "DSHeroExample",
-    props: { siteName, tagline },
+  elements["hero-example"] = { type: "DSHeroExample", props: { siteName, tagline } };
+  elements["features-example"] = { type: "DSFeatureGridExample", props: {} };
+  elements["pricing-example"] = { type: "DSPricingExample", props: {} };
+  elements["testimonials-example"] = { type: "DSTestimonialsExample", props: {} };
+  elements["cta-example"] = { type: "DSCTAExample", props: { siteName } };
+  elements["tab-examples"] = {
+    type: "DSTabPanel", props: {},
+    children: ["examples-header", "hero-example", "features-example", "pricing-example", "testimonials-example", "cta-example"],
   };
 
-  children.push("features-example");
-  elements["features-example"] = {
-    type: "DSFeatureGridExample",
-    props: {},
-  };
-
-  children.push("pricing-example");
-  elements["pricing-example"] = {
-    type: "DSPricingExample",
-    props: {},
-  };
-
-  children.push("testimonials-example");
-  elements["testimonials-example"] = {
-    type: "DSTestimonialsExample",
-    props: {},
-  };
-
-  children.push("cta-example");
-  elements["cta-example"] = {
-    type: "DSCTAExample",
-    props: { siteName },
+  // Tabs container
+  children.push("tabs");
+  elements["tabs"] = {
+    type: "DSTabs",
+    props: { tabs: tabNames, defaultTab: 0 },
+    children: tabPanelIds,
   };
 
   // Footer
@@ -397,6 +396,16 @@ export const dsCatalog = defineCatalog(schema, {
     DSHeader: {
       props: z.object({ siteName: z.string(), domain: z.string() }),
       description: "Design system page header.",
+    },
+    DSTabs: {
+      props: z.object({ tabs: z.array(z.string()), defaultTab: z.number().optional() }),
+      slots: ["default"],
+      description: "Tab container.",
+    },
+    DSTabPanel: {
+      props: z.object({}),
+      slots: ["default"],
+      description: "Tab content wrapper.",
     },
     DSBrandIdentity: {
       props: z.object({
@@ -525,7 +534,7 @@ export const { registry: dsRegistry } = defineRegistry(dsCatalog, {
       }, children);
     },
     DSHeader: ({ props }) => {
-      return React.createElement("header", { style: { marginBottom: 64 } },
+      return React.createElement("header", { style: { marginBottom: 32 } },
         React.createElement("h1", {
           style: { fontFamily: fonts.display, fontSize: 48, fontWeight: 700, letterSpacing: "-0.02em", marginBottom: 8 },
         }, "Design System"),
@@ -535,6 +544,33 @@ export const { registry: dsRegistry } = defineRegistry(dsCatalog, {
           " \\u2014 with dark mode support",
         ),
       );
+    },
+    DSTabs: ({ props, children }) => {
+      var _a = React.useState(props.defaultTab || 0), active = _a[0], setActive = _a[1];
+      var panels = React.Children.toArray(children);
+      return React.createElement("div", null,
+        React.createElement("nav", {
+          style: { display: "flex", gap: 0, borderBottom: "1px solid var(--color-border-primary)", marginBottom: 40, overflowX: "auto" as const, WebkitOverflowScrolling: "touch" as const },
+        },
+          ...props.tabs.map(function(label: string, i: number) {
+            return React.createElement("button", {
+              key: label,
+              onClick: function() { setActive(i); },
+              style: {
+                padding: "12px 20px", fontSize: 14, fontWeight: active === i ? 600 : 400, fontFamily: fonts.sans,
+                color: active === i ? "var(--color-accent)" : "var(--color-text-secondary)",
+                background: "transparent", border: "none", borderBottom: active === i ? "2px solid var(--color-accent)" : "2px solid transparent",
+                cursor: "pointer", whiteSpace: "nowrap" as const, transition: "color 0.15s, border-color 0.15s",
+                marginBottom: -1,
+              },
+            }, label);
+          }),
+        ),
+        panels[active] || null,
+      );
+    },
+    DSTabPanel: ({ props, children }) => {
+      return React.createElement("div", null, children);
     },
     DSBrandIdentity: ({ props }) => {
       if (!props.logoUrl && !props.tagline && !props.description) return null;
