@@ -923,6 +923,191 @@ export async function extractBackgrounds(cwd: string): Promise<void> {
   }
 }
 
+// ── Image extraction script (runs inside the browser) ───────────────
+
+/**
+ * Extracts visible images from the page: src, alt, dimensions, context (section),
+ * object-fit, lazy loading, and format detection.
+ */
+export const IMAGE_EXTRACTION_SCRIPT = () => {
+  const isVisible = (el: Element | null): boolean => {
+    if (!el) return false;
+    const htmlEl = el as HTMLElement;
+    if (htmlEl.offsetWidth === 0 && htmlEl.offsetHeight === 0) return false;
+    const s = getComputedStyle(el);
+    return s.display !== "none" && s.visibility !== "hidden" && s.opacity !== "0";
+  };
+
+  const getSectionContext = (el: Element): string => {
+    let cur: Element | null = el;
+    for (let i = 0; i < 8 && cur; i++) {
+      const text = (
+        (cur.className?.toString?.() || "") + " " +
+        (cur.id || "") + " " +
+        (cur.getAttribute("aria-label") || "")
+      ).toLowerCase();
+      if (text.match(/hero|banner|jumbotron/)) return "Hero";
+      if (text.match(/feature|benefit/)) return "Features";
+      if (text.match(/testimonial|review/)) return "Testimonials";
+      if (text.match(/about|team/)) return "About";
+      if (text.match(/partner|client|logo|trust/)) return "Partners";
+      if (text.match(/gallery|portfolio/)) return "Gallery";
+      if (text.match(/product/)) return "Product";
+      if (text.match(/blog|article|post/)) return "Blog";
+      if (cur.tagName.toLowerCase() === "header") return "Header";
+      if (cur.tagName.toLowerCase() === "footer") return "Footer";
+      cur = cur.parentElement;
+    }
+    return "General";
+  };
+
+  const getFormat = (src: string): string => {
+    try {
+      const url = new URL(src, location.href);
+      const path = url.pathname.toLowerCase();
+      if (path.endsWith(".svg")) return "SVG";
+      if (path.endsWith(".webp")) return "WebP";
+      if (path.endsWith(".avif")) return "AVIF";
+      if (path.endsWith(".png")) return "PNG";
+      if (path.endsWith(".jpg") || path.endsWith(".jpeg")) return "JPEG";
+      if (path.endsWith(".gif")) return "GIF";
+      if (path.endsWith(".ico")) return "ICO";
+    } catch { /* ignore */ }
+    return "Unknown";
+  };
+
+  const images: Array<{
+    src: string;
+    alt: string;
+    width: number;
+    height: number;
+    naturalWidth: number;
+    naturalHeight: number;
+    format: string;
+    loading: string;
+    objectFit: string;
+    section: string;
+    isBackground: boolean;
+  }> = [];
+
+  const seen = new Set<string>();
+
+  // Collect <img> elements
+  const imgs = document.querySelectorAll("img");
+  for (const img of imgs) {
+    if (!isVisible(img)) continue;
+    const src = img.currentSrc || img.src;
+    if (!src || src.startsWith("data:image/svg") || src.startsWith("data:image/gif;base64,R0lGOD")) continue; // skip tracking pixels / inline svgs
+    const key = src.split("?")[0]; // dedupe ignoring query params
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const rect = img.getBoundingClientRect();
+    if (rect.width < 20 || rect.height < 20) continue; // skip tiny images (icons, spacers)
+
+    const s = getComputedStyle(img);
+
+    images.push({
+      src: new URL(src, location.href).href,
+      alt: img.alt || "",
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+      naturalWidth: img.naturalWidth,
+      naturalHeight: img.naturalHeight,
+      format: getFormat(src),
+      loading: img.loading || "eager",
+      objectFit: s.objectFit !== "fill" ? s.objectFit : "fill",
+      section: getSectionContext(img),
+      isBackground: false,
+    });
+  }
+
+  // Collect CSS background images from sections
+  const sections = document.querySelectorAll("section, header, footer, [class*='hero'], [class*='Hero'], main > div");
+  for (const el of sections) {
+    if (!isVisible(el)) continue;
+    const s = getComputedStyle(el);
+    const bgImage = s.backgroundImage;
+    if (bgImage === "none" || !bgImage.includes("url(")) continue;
+    const urlMatch = bgImage.match(/url\(["']?([^"')]+)["']?\)/);
+    if (!urlMatch) continue;
+    const src = urlMatch[1];
+    if (src.startsWith("data:")) continue;
+    const key = src.split("?")[0];
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const rect = el.getBoundingClientRect();
+
+    images.push({
+      src: new URL(src, location.href).href,
+      alt: "",
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+      naturalWidth: 0,
+      naturalHeight: 0,
+      format: getFormat(src),
+      loading: "eager",
+      objectFit: s.backgroundSize === "cover" ? "cover" : (s.backgroundSize === "contain" ? "contain" : "fill"),
+      section: getSectionContext(el),
+      isBackground: true,
+    });
+  }
+
+  // Summary stats
+  const formats: Record<string, number> = {};
+  for (const img of images) {
+    formats[img.format] = (formats[img.format] || 0) + 1;
+  }
+  const lazyCount = images.filter(i => i.loading === "lazy").length;
+  const withAlt = images.filter(i => i.alt.length > 0).length;
+  const bgCount = images.filter(i => i.isBackground).length;
+
+  return {
+    images,
+    summary: {
+      total: images.length,
+      formats,
+      lazyLoaded: lazyCount,
+      withAlt,
+      withoutAlt: images.length - withAlt,
+      backgroundImages: bgCount,
+    },
+  };
+};
+
+// ── Deterministic image extraction ──────────────────────────────────
+
+export async function extractImages(cwd: string): Promise<void> {
+  const scriptExpr = `(${IMAGE_EXTRACTION_SCRIPT.toString()})()`;
+
+  try {
+    const rawOutput = execSync("agent-browser eval --stdin", {
+      input: scriptExpr,
+      encoding: "utf-8",
+      timeout: 15_000,
+    }).trim();
+
+    let imgData: Record<string, unknown>;
+    try {
+      let parsed = JSON.parse(rawOutput);
+      if (typeof parsed === "string") parsed = JSON.parse(parsed);
+      imgData = parsed;
+    } catch {
+      log.warn("image extraction: failed to parse eval output");
+      return;
+    }
+
+    const imgDir = join(cwd, ".claude/images");
+    writeFileSync(join(imgDir, "image-data.json"), JSON.stringify(imgData, null, 2), "utf-8");
+    const total = (imgData.summary as Record<string, unknown>)?.total ?? 0;
+    log.success(`image-data.json (${total} images)`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log.warn(`agent-browser image extraction failed: ${msg}`);
+  }
+}
+
 // ── Deterministic screenshot capture (replicate mode) ───────────────
 
 export async function captureScreenshots(cwd: string): Promise<void> {

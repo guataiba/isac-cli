@@ -173,6 +173,34 @@ export const dsCatalog = defineCatalog(schema, {
       description: "Component showcase with buttons, cards, badges, input, glass surface, and text hierarchy.",
     },
 
+    DSImages: {
+      props: z.object({
+        title: z.string(),
+        images: z.array(z.object({
+          src: z.string(),
+          alt: z.string(),
+          width: z.number(),
+          height: z.number(),
+          naturalWidth: z.number(),
+          naturalHeight: z.number(),
+          format: z.string(),
+          loading: z.string(),
+          objectFit: z.string(),
+          section: z.string(),
+          isBackground: z.boolean(),
+        })),
+        summary: z.object({
+          total: z.number(),
+          formats: z.record(z.number()),
+          lazyLoaded: z.number(),
+          withAlt: z.number(),
+          withoutAlt: z.number(),
+          backgroundImages: z.number(),
+        }),
+      }),
+      description: "Image gallery showing all images extracted from the page with metadata.",
+    },
+
     DSIcons: {
       props: z.object({
         title: z.string(),

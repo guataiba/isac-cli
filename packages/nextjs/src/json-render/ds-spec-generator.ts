@@ -247,6 +247,27 @@ export function generateDesignSystemSpec(cwd: string, url: string): DSSpec {
     }
   } catch { /* ignore */ }
 
+  // ── Read image data ──
+  interface ImageItem {
+    src: string; alt: string; width: number; height: number;
+    naturalWidth: number; naturalHeight: number; format: string;
+    loading: string; objectFit: string; section: string; isBackground: boolean;
+  }
+  interface ImageSummary {
+    total: number; formats: Record<string, number>; lazyLoaded: number;
+    withAlt: number; withoutAlt: number; backgroundImages: number;
+  }
+  let extractedImages: ImageItem[] = [];
+  let imageSummary: ImageSummary = { total: 0, formats: {}, lazyLoaded: 0, withAlt: 0, withoutAlt: 0, backgroundImages: 0 };
+  try {
+    const imgPath = join(cwd, ".claude/images/image-data.json");
+    if (existsSync(imgPath)) {
+      const imgData = JSON.parse(readFileSync(imgPath, "utf-8"));
+      extractedImages = imgData.images || [];
+      imageSummary = imgData.summary || imageSummary;
+    }
+  } catch { /* ignore */ }
+
   // ── Read icon data ──
   let iconLibrary = "none";
   let iconNames: string[] = [];
@@ -378,7 +399,20 @@ export function generateDesignSystemSpec(cwd: string, url: string): DSSpec {
   };
   elements["tab-backgrounds"] = { type: "DSTabPanel", props: {}, children: ["backgrounds"] };
 
-  // Tab 6: Layout Examples
+  // Tab 6: Images
+  tabNames.push("Images");
+  tabPanelIds.push("tab-images");
+  elements["page-images"] = {
+    type: "DSImages",
+    props: {
+      title: "Page Images",
+      images: extractedImages,
+      summary: imageSummary,
+    },
+  };
+  elements["tab-images"] = { type: "DSTabPanel", props: {}, children: ["page-images"] };
+
+  // Tab 7: Layout Examples
   tabNames.push("Layout Examples");
   tabPanelIds.push("tab-examples");
   elements["examples-header"] = {
@@ -573,6 +607,21 @@ export const dsCatalog = defineCatalog(schema, {
         }).nullable(),
       }),
       description: "Component showcase.",
+    },
+    DSImages: {
+      props: z.object({
+        title: z.string(),
+        images: z.array(z.object({
+          src: z.string(), alt: z.string(), width: z.number(), height: z.number(),
+          naturalWidth: z.number(), naturalHeight: z.number(), format: z.string(),
+          loading: z.string(), objectFit: z.string(), section: z.string(), isBackground: z.boolean(),
+        })),
+        summary: z.object({
+          total: z.number(), formats: z.record(z.number()), lazyLoaded: z.number(),
+          withAlt: z.number(), withoutAlt: z.number(), backgroundImages: z.number(),
+        }),
+      }),
+      description: "Image gallery.",
     },
     DSIcons: {
       props: z.object({ title: z.string(), library: z.string(), count: z.number(), names: z.array(z.string()) }),
@@ -954,6 +1003,71 @@ export const { registry: dsRegistry } = defineRegistry(dsCatalog, {
           React.createElement("div", { style: { fontSize: 16, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 4 } }, "Subheading with medium weight"),
           React.createElement("div", { style: { fontSize: 14, color: "var(--color-text-secondary)", lineHeight: 1.6, marginBottom: 4 } }, "Body text using secondary color for comfortable reading."),
           React.createElement("div", { style: { fontSize: 12, color: "var(--color-text-tertiary)" } }, "Caption text \\u2014 tertiary color for supplementary information"),
+        ),
+      );
+    },
+    DSImages: ({ props }) => {
+      if (props.images.length === 0) {
+        return React.createElement(SectionWrapper, { title: props.title },
+          React.createElement("p", { style: { fontSize: 14, color: "var(--color-text-tertiary)", fontStyle: "italic" } }, "No images detected on the page."),
+        );
+      }
+      var s = props.summary;
+      return React.createElement(SectionWrapper, { title: props.title },
+        React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 12, marginBottom: 32 } },
+          ...[
+            [String(s.total), "Total Images"],
+            [String(s.lazyLoaded), "Lazy Loaded"],
+            [String(s.withAlt), "With Alt Text"],
+            [String(s.withoutAlt), "Missing Alt"],
+            [String(s.backgroundImages), "CSS Backgrounds"],
+          ].map(function(pair: string[]) {
+            return React.createElement("div", {
+              key: pair[1],
+              style: { padding: "12px 20px", background: "var(--color-bg-secondary)", border: "1px solid var(--color-border-primary)", borderRadius: 8, textAlign: "center", minWidth: 100 },
+            },
+              React.createElement("div", { style: { fontSize: 24, fontWeight: 700, fontFamily: fonts.display, color: pair[1] === "Missing Alt" && parseInt(pair[0]) > 0 ? "#ef4444" : "var(--color-text-primary)" } }, pair[0]),
+              React.createElement("div", { style: { fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 4 } }, pair[1]),
+            );
+          }),
+        ),
+        React.createElement(SubHeading, null, "Formats"),
+        React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 32 } },
+          ...Object.entries(s.formats).map(function(entry: [string, unknown]) {
+            return React.createElement("span", { key: entry[0], style: { display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 12px", fontSize: 12, fontWeight: 500, fontFamily: fonts.mono, background: "var(--color-bg-tertiary)", color: "var(--color-text-secondary)", borderRadius: 6, border: "1px solid var(--color-border-subtle)" } },
+              entry[0],
+              React.createElement("span", { style: { fontWeight: 700, color: "var(--color-text-primary)" } }, String(entry[1])),
+            );
+          }),
+        ),
+        React.createElement(SubHeading, null, "All Images"),
+        React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 16 } },
+          ...props.images.map(function(img: any, i: number) {
+            return React.createElement("div", {
+              key: img.src + "-" + i,
+              style: { border: "1px solid var(--color-border-primary)", borderRadius: 10, overflow: "hidden", background: "var(--color-bg-secondary)" },
+            },
+              React.createElement("div", {
+                style: { height: 140, background: "repeating-conic-gradient(var(--color-bg-tertiary) 0% 25%, transparent 0% 50%) 0 0 / 16px 16px", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" },
+              },
+                React.createElement("img", { src: img.src, alt: img.alt || "No alt text", style: { maxWidth: "100%", maxHeight: 140, objectFit: "contain" } }),
+              ),
+              React.createElement("div", { style: { padding: "10px 12px", fontSize: 11 } },
+                React.createElement("div", { style: { display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" } },
+                  React.createElement("span", { style: { padding: "2px 8px", fontSize: 10, fontWeight: 600, fontFamily: fonts.mono, background: "var(--color-bg-tertiary)", color: "var(--color-accent)", borderRadius: 4 } }, img.section),
+                  React.createElement("span", { style: { padding: "2px 8px", fontSize: 10, fontWeight: 500, fontFamily: fonts.mono, background: "var(--color-bg-tertiary)", color: "var(--color-text-secondary)", borderRadius: 4 } }, img.format),
+                  img.isBackground ? React.createElement("span", { style: { padding: "2px 8px", fontSize: 10, fontFamily: fonts.mono, background: "var(--color-bg-tertiary)", color: "var(--color-text-tertiary)", borderRadius: 4 } }, "CSS bg") : null,
+                ),
+                React.createElement("div", { style: { display: "flex", gap: 12, marginBottom: 4, color: "var(--color-text-secondary)" } },
+                  React.createElement("span", null, img.width + "x" + img.height + "px"),
+                  img.naturalWidth > 0 ? React.createElement("span", { style: { color: "var(--color-text-tertiary)" } }, "native: " + img.naturalWidth + "x" + img.naturalHeight) : null,
+                ),
+                React.createElement("div", { style: { fontFamily: fonts.mono, fontSize: 10, color: img.alt ? "var(--color-text-secondary)" : "#ef4444", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } },
+                  img.alt ? 'alt: "' + img.alt + '"' : "no alt text",
+                ),
+              ),
+            );
+          }),
         ),
       );
     },

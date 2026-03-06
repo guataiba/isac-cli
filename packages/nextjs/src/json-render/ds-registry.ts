@@ -421,6 +421,90 @@ export const { registry: dsRegistry } = defineRegistry(dsCatalog, {
       );
     },
 
+    DSImages: ({ props }) => {
+      if (props.images.length === 0) {
+        return React.createElement(SectionWrapper, { title: props.title },
+          React.createElement("p", { style: { fontSize: 14, color: "var(--color-text-tertiary)", fontStyle: "italic" as const } }, "No images detected on the page."),
+        );
+      }
+      const s = props.summary;
+      return React.createElement(SectionWrapper, { title: props.title },
+        // Summary stats
+        React.createElement("div", { style: { display: "flex", flexWrap: "wrap" as const, gap: 12, marginBottom: 32 } },
+          ...[
+            [`${s.total}`, "Total Images"],
+            [`${s.lazyLoaded}`, "Lazy Loaded"],
+            [`${s.withAlt}`, "With Alt Text"],
+            [`${s.withoutAlt}`, "Missing Alt"],
+            [`${s.backgroundImages}`, "CSS Backgrounds"],
+          ].map(([val, label]) =>
+            React.createElement("div", {
+              key: label,
+              style: { padding: "12px 20px", background: "var(--color-bg-secondary)", border: "1px solid var(--color-border-primary)", borderRadius: 8, textAlign: "center" as const, minWidth: 100 },
+            },
+              React.createElement("div", { style: { fontSize: 24, fontWeight: 700, fontFamily: fonts.display, color: label === "Missing Alt" && parseInt(val) > 0 ? "#ef4444" : "var(--color-text-primary)" } }, val),
+              React.createElement("div", { style: { fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 4 } }, label),
+            ),
+          ),
+        ),
+        // Format breakdown
+        React.createElement(SubHeading, null, "Formats"),
+        React.createElement("div", { style: { display: "flex", flexWrap: "wrap" as const, gap: 8, marginBottom: 32 } },
+          ...Object.entries(s.formats).map(([fmt, count]) =>
+            React.createElement("span", { key: fmt, style: { display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 12px", fontSize: 12, fontWeight: 500, fontFamily: fonts.mono, background: "var(--color-bg-tertiary)", color: "var(--color-text-secondary)", borderRadius: 6, border: "1px solid var(--color-border-subtle)" } },
+              fmt,
+              React.createElement("span", { style: { fontWeight: 700, color: "var(--color-text-primary)" } }, String(count)),
+            ),
+          ),
+        ),
+        // Image grid
+        React.createElement(SubHeading, null, "All Images"),
+        React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 16 } },
+          ...props.images.map((img, i) =>
+            React.createElement("div", {
+              key: `${img.src}-${i}`,
+              style: { border: "1px solid var(--color-border-primary)", borderRadius: 10, overflow: "hidden", background: "var(--color-bg-secondary)" },
+            },
+              // Thumbnail
+              React.createElement("div", {
+                style: { height: 140, background: "repeating-conic-gradient(var(--color-bg-tertiary) 0% 25%, transparent 0% 50%) 0 0 / 16px 16px", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" },
+              },
+                React.createElement("img", {
+                  src: img.src,
+                  alt: img.alt || "No alt text",
+                  style: { maxWidth: "100%", maxHeight: 140, objectFit: "contain" as const },
+                }),
+              ),
+              // Details
+              React.createElement("div", { style: { padding: "10px 12px", fontSize: 11 } },
+                // Section badge + format
+                React.createElement("div", { style: { display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" as const } },
+                  React.createElement("span", { style: { padding: "2px 8px", fontSize: 10, fontWeight: 600, fontFamily: fonts.mono, background: "var(--color-bg-tertiary)", color: "var(--color-accent)", borderRadius: 4 } }, img.section),
+                  React.createElement("span", { style: { padding: "2px 8px", fontSize: 10, fontWeight: 500, fontFamily: fonts.mono, background: "var(--color-bg-tertiary)", color: "var(--color-text-secondary)", borderRadius: 4 } }, img.format),
+                  img.isBackground ? React.createElement("span", { style: { padding: "2px 8px", fontSize: 10, fontWeight: 500, fontFamily: fonts.mono, background: "var(--color-bg-tertiary)", color: "var(--color-text-tertiary)", borderRadius: 4 } }, "CSS bg") : null,
+                  img.loading === "lazy" ? React.createElement("span", { style: { padding: "2px 8px", fontSize: 10, fontWeight: 500, fontFamily: fonts.mono, background: "var(--color-bg-tertiary)", color: "var(--color-text-tertiary)", borderRadius: 4 } }, "lazy") : null,
+                ),
+                // Dimensions
+                React.createElement("div", { style: { display: "flex", gap: 12, marginBottom: 4, color: "var(--color-text-secondary)" } },
+                  React.createElement("span", null, `${img.width}×${img.height}px`),
+                  img.naturalWidth > 0 ? React.createElement("span", { style: { color: "var(--color-text-tertiary)" } }, `native: ${img.naturalWidth}×${img.naturalHeight}`) : null,
+                  img.objectFit !== "fill" ? React.createElement("code", { style: { fontFamily: fonts.mono, color: "var(--color-text-tertiary)" } }, `fit: ${img.objectFit}`) : null,
+                ),
+                // Alt text
+                React.createElement("div", { style: { fontFamily: fonts.mono, fontSize: 10, color: img.alt ? "var(--color-text-secondary)" : "#ef4444", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const } },
+                  img.alt ? `alt: "${img.alt}"` : "no alt text",
+                ),
+                // URL
+                React.createElement("div", { style: { fontFamily: fonts.mono, fontSize: 10, color: "var(--color-text-tertiary)", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const } },
+                  img.src.length > 60 ? "..." + img.src.slice(-57) : img.src,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    },
+
     DSIcons: ({ props }) => {
       if (props.count === 0) return null;
       return React.createElement(SectionWrapper, { title: props.title },
