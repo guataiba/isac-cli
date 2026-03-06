@@ -5,6 +5,7 @@ import { runClaudePhase } from "./claude-runner.js";
 import { PHASE_3_TOOLS } from "./tools.js";
 import { log } from "../ui/logger.js";
 import type { PagePlan } from "../catalog/index.js";
+import type { JsonRenderSpec } from "./phase-2-planning.js";
 import type { PipelineContext, PhaseResult } from "./types.js";
 
 export async function runPhase3(
@@ -13,10 +14,46 @@ export async function runPhase3(
   corrections?: string,
   onEvent?: (event: Record<string, unknown>) => void,
   pagePlan?: PagePlan,
+  jsonRenderSpec?: JsonRenderSpec,
 ): Promise<PhaseResult> {
   const start = Date.now();
 
   try {
+    // ── json-render path: render from spec without Claude ──
+    if (jsonRenderSpec && !corrections && ctx.adapter.renderPageFromSpec) {
+      log.info("Rendering page from json-render spec (deterministic)...");
+      const pageContent = ctx.adapter.renderPageFromSpec(ctx.cwd, jsonRenderSpec);
+
+      const pagePath = join(ctx.cwd, ctx.adapter.getMainPagePath());
+      mkdirSync(dirname(pagePath), { recursive: true });
+      writeFileSync(pagePath, pageContent, "utf-8");
+      log.success(`${ctx.adapter.getMainPagePath()} written (json-render)`);
+
+      const validation = ctx.adapter.validateImplementation(ctx.cwd);
+      if (!validation.valid) {
+        log.warn("json-render render failed validation — falling back to legacy");
+      } else {
+        let buildPasses = false;
+        try {
+          const checkCommand = ctx.adapter.getQuickCheckCommand?.() ?? ctx.adapter.getBuildCommand();
+          execSync(checkCommand, { cwd: ctx.cwd, stdio: "pipe", timeout: 60_000 });
+          buildPasses = true;
+          log.success(`${ctx.adapter.getMainPagePath()} + type check passes`);
+        } catch {
+          log.warn("json-render render failed type check — falling back to legacy");
+        }
+
+        if (buildPasses) {
+          return {
+            phase: "phase-3-implementation",
+            success: true,
+            duration: Date.now() - start,
+            costUsd: 0,
+          };
+        }
+      }
+    }
+
     // ── Deterministic path: render from PagePlan without Claude ──
     if (pagePlan && !corrections && ctx.adapter.renderPageFromPlan) {
       log.info("Rendering page deterministically from structured plan...");
@@ -27,11 +64,9 @@ export async function runPhase3(
       writeFileSync(pagePath, pageContent, "utf-8");
       log.success(`${ctx.adapter.getMainPagePath()} written (deterministic)`);
 
-      // Validate + type check
       const validation = ctx.adapter.validateImplementation(ctx.cwd);
       if (!validation.valid) {
         log.warn("Deterministic render failed validation — falling back to Claude");
-        // Fall through to Claude path below
       } else {
         let buildPasses = false;
         try {
@@ -71,7 +106,6 @@ export async function runPhase3(
 
     ctx.sessionId = result.sessionId;
 
-    // Validate via adapter
     const validation = ctx.adapter.validateImplementation(ctx.cwd);
     if (!validation.valid) {
       log.error(validation.message ?? "Implementation validation failed");
@@ -84,7 +118,6 @@ export async function runPhase3(
       };
     }
 
-    // Fast type-check validation
     let buildPasses = false;
     try {
       const checkCommand = ctx.adapter.getQuickCheckCommand?.() ?? ctx.adapter.getBuildCommand();

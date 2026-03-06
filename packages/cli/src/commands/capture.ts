@@ -9,6 +9,7 @@ import {
   disableMcp,
   type PipelineStopAfter,
   type PipelineMode,
+  type PipelineEngine,
 } from "@guataiba/isac-core";
 import { resolveAdapter } from "../adapters.js";
 
@@ -21,6 +22,7 @@ export interface CaptureOptions {
   replicate?: boolean;
   stopAfter?: string;
   animations?: boolean;
+  engine?: string;
 }
 
 export async function captureCommand(
@@ -64,6 +66,18 @@ export async function captureCommand(
   const mode: PipelineMode = options.replicate ? "replicate" : "design-system";
   const animations = options.animations ?? false;
 
+  // Resolve engine
+  let engine: PipelineEngine = "json-render";
+  if (options.engine) {
+    if (options.engine !== "json-render" && options.engine !== "legacy") {
+      console.error(
+        chalk.red("  Error: Invalid --engine value. Must be 'json-render' or 'legacy'."),
+      );
+      process.exit(1);
+    }
+    engine = options.engine as PipelineEngine;
+  }
+
   // Resolve stopAfter
   let stopAfter: PipelineStopAfter = null;
   if (options.stopAfter) {
@@ -84,6 +98,7 @@ export async function captureCommand(
   log.summary("Directory", dir);
   log.summary("Framework", adapter.displayName);
   log.summary("Mode", mode === "replicate" ? "Page replication" : "Design system");
+  log.summary("Engine", engine);
   if (stopAfter) {
     log.summary("Stop after", stopAfter);
   } else if (mode === "replicate") {
@@ -109,6 +124,7 @@ export async function captureCommand(
       stopAfter,
       adapter,
       animations,
+      engine,
     });
 
     log.divider();

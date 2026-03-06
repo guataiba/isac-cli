@@ -40,6 +40,11 @@ program
     "Detect and catalog page animations (replicate mode only)",
     false,
   )
+  .option(
+    "--engine <name>",
+    "Rendering engine: json-render (default) or legacy",
+    "json-render",
+  )
   .action(async (url: string, opts: Record<string, string | boolean>) => {
     const invokedAsReplicate = process.argv[2] === "replicate";
     await captureCommand(url, {
@@ -49,6 +54,7 @@ program
       replicate: invokedAsReplicate || (opts.replicate as boolean),
       stopAfter: opts.stopAfter as string | undefined,
       animations: (opts.animations as boolean) ?? false,
+      engine: opts.engine as string | undefined,
     });
   });
 

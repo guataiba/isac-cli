@@ -2,6 +2,8 @@ import type { FrameworkAdapter } from "../adapter.js";
 
 export type PipelineMode = "design-system" | "replicate";
 
+export type PipelineEngine = "legacy" | "json-render";
+
 export type PipelineStopAfter =
   | "screenshots"
   | "design-system"
@@ -17,6 +19,7 @@ export interface PipelineContext {
   mode: PipelineMode;
   stopAfter: PipelineStopAfter;
   animations: boolean;
+  engine: PipelineEngine;
   sessionId?: string;
   adapter: FrameworkAdapter;
 }
@@ -65,6 +68,7 @@ export interface PipelineOptions {
   stopAfter: PipelineStopAfter;
   adapter: FrameworkAdapter;
   animations: boolean;
+  engine: PipelineEngine;
 }
 
 export interface PipelineResult {

@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./json-render": {
+      "types": "./dist/json-render/index.d.ts",
+      "import": "./dist/json-render/index.js"
     }
   },
   "scripts": {
@@ -37,10 +41,15 @@
     "url": "https://github.com/guataiba/isac-cli/issues"
   },
   "dependencies": {
-    "@guataiba/isac-core": "workspace:*"
+    "@guataiba/isac-core": "workspace:*",
+    "@json-render/core": "^0.11.0",
+    "@json-render/react": "^0.11.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/node": "^22.13.0",
+    "@types/react": "^19.2.14",
+    "react": "^19.2.4",
     "tsup": "^8.4.0",
     "typescript": "^5.7.0",
     "vitest": "^4.0.18"

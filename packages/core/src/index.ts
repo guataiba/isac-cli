@@ -6,6 +6,7 @@ export { runPipeline, disableMcp } from "./pipeline/orchestrator.js";
 export type {
   PipelineContext,
   PipelineMode,
+  PipelineEngine,
   PipelineStopAfter,
   PhaseConfig,
   PhaseOutput,

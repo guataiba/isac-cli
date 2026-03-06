@@ -169,6 +169,25 @@ export interface FrameworkAdapter {
   renderPageFromPlan?(cwd: string, plan: PagePlan): string;
 
   /**
+   * Phase 2 (json-render engine): Returns the system prompt for generating
+   * a json-render spec. Uses catalog.prompt() internally.
+   * If not implemented, falls back to getPagePlannerPromptV2.
+   */
+  getJsonRenderPrompt?(screenshotDir: string): string;
+
+  /**
+   * Phase 3 (json-render engine): Render page.tsx from a json-render spec.
+   * Generates page.tsx with embedded spec + Renderer component.
+   */
+  renderPageFromSpec?(cwd: string, spec: unknown): string;
+
+  /**
+   * Phase 1B (json-render engine): Render design system page via json-render.
+   * Generates the DS spec deterministically, writes page.tsx + DS client component + registry.
+   */
+  renderDesignSystemFromSpec?(cwd: string, url: string): void;
+
+  /**
    * Phase 3 validation: Check that implementation files exist.
    */
   validateImplementation(cwd: string): PhaseValidation;

@@ -6,8 +6,18 @@ import { DESIGN_TOKENS_CSS_TEMPLATE } from "@guataiba/isac-core";
 import { renderPageFromPlan as renderPage } from "./renderers/page-renderer.js";
 import { getDsPageBuilderPrompt } from "./prompts/ds-page-builder.js";
 import { getPagePlannerPrompt, getPagePlannerPromptV2 } from "./prompts/page-planner.js";
+import { getJsonRenderPlannerPrompt } from "./prompts/page-planner-jr.js";
 import { getPageBuilderPrompt } from "./prompts/page-builder.js";
 import { getVisualVerifierPrompt } from "./prompts/visual-verifier.js";
+import type { Spec } from "@json-render/core";
+import { generatePageFromSpec, generateIsacPageComponent } from "./json-render/page-generator.js";
+import {
+  generateDesignSystemSpec,
+  generateDSPageFromSpec,
+  generateDSPageComponent,
+  generateDSCatalogSource,
+  generateDSRegistrySource,
+} from "./json-render/ds-spec-generator.js";
 import { DESIGN_SYSTEM_PAGE_TEMPLATE } from "./templates/design-system-page.tsx.js";
 import { DESIGN_SYSTEM_LAYOUT_TEMPLATE } from "./templates/design-system-layout.tsx.js";
 import { DESIGN_SYSTEM_DATA_TEMPLATE } from "./templates/design-system-data.ts.js";
@@ -277,6 +287,60 @@ export const nextjsAdapter: FrameworkAdapter = {
 
   renderPageFromPlan(_cwd: string, plan: PagePlan): string {
     return renderPage(plan);
+  },
+
+  getJsonRenderPrompt(screenshotDir: string): string {
+    return getJsonRenderPlannerPrompt(screenshotDir);
+  },
+
+  renderPageFromSpec(cwd: string, spec: unknown): string {
+    const s = spec as Spec;
+    // Extract title/description from the Page root element
+    const rootEl = s.elements[s.root] as { props?: { title?: string; description?: string } } | undefined;
+    const title = rootEl?.props?.title ?? "Home";
+    const description = rootEl?.props?.description ?? "";
+
+    // Write the IsacPage client component and registry re-export
+    const jrDir = join(cwd, "app/json-render");
+    mkdirSync(jrDir, { recursive: true });
+    writeFileSync(join(jrDir, "isac-page.tsx"), generateIsacPageComponent(), "utf-8");
+
+    // Write registry re-export — imports from the installed package
+    writeFileSync(join(jrDir, "registry.ts"), `export { registry } from "@guataiba/isac-nextjs/json-render";\n`, "utf-8");
+
+    return generatePageFromSpec(s, title, description);
+  },
+
+  renderDesignSystemFromSpec(cwd: string, url: string): void {
+    const spec = generateDesignSystemSpec(cwd, url);
+
+    // Extract siteName/domain from spec
+    const rootEl = spec.elements[spec.root];
+    const siteName = (rootEl?.props?.siteName as string) ?? "Site";
+    const domain = (rootEl?.props?.domain as string) ?? "example.com";
+
+    // Install json-render runtime dependencies in target project
+    try {
+      execSync("npm install --save @json-render/core @json-render/react zod", {
+        cwd,
+        stdio: "pipe",
+        timeout: 60_000,
+      });
+    } catch {
+      // Non-fatal — user may have them already or can install manually
+    }
+
+    // Write the DS page.tsx with embedded spec
+    const dsDir = join(cwd, "app/design-system");
+    mkdirSync(dsDir, { recursive: true });
+    writeFileSync(join(dsDir, "page.tsx"), generateDSPageFromSpec(spec, siteName, domain), "utf-8");
+
+    // Write the DSPage client component, catalog, and registry inline
+    const jrDir = join(dsDir, "json-render");
+    mkdirSync(jrDir, { recursive: true });
+    writeFileSync(join(jrDir, "ds-page.tsx"), generateDSPageComponent(), "utf-8");
+    writeFileSync(join(jrDir, "ds-catalog.ts"), generateDSCatalogSource(), "utf-8");
+    writeFileSync(join(jrDir, "ds-registry.ts"), generateDSRegistrySource(), "utf-8");
   },
 
   getPageBuilderPrompt(plan: string, screenshotDir: string, corrections?: string): string {

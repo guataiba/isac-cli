@@ -66,7 +66,12 @@ function writeDesignSystemTemplates(ctx: PipelineContext): void {
     mkdirSync(dirname(fullPath), { recursive: true });
     writeFileSync(fullPath, content, "utf-8");
   }
-  if (templates.length > 0) {
+
+  // json-render engine: replace static page.tsx with Renderer-based page
+  if (ctx.engine === "json-render" && ctx.adapter.renderDesignSystemFromSpec) {
+    ctx.adapter.renderDesignSystemFromSpec(ctx.cwd, ctx.url);
+    log.success("Design system templates written (json-render)");
+  } else if (templates.length > 0) {
     log.success("Design system templates written");
   }
 }
@@ -85,6 +90,7 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
     mode: options.mode,
     stopAfter: options.stopAfter,
     animations: options.animations,
+    engine: options.engine,
     adapter: options.adapter,
   };
 
@@ -298,7 +304,7 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
         ? "Implementing page..."
         : `Applying corrections (attempt ${attempt + 1})...`,
     );
-    const phase3 = await runPhase3(ctx, phase2.plan, corrections, onEvent, phase2.pagePlan);
+    const phase3 = await runPhase3(ctx, phase2.plan, corrections, onEvent, phase2.pagePlan, phase2.jsonRenderSpec);
     phases.push(phase3);
 
     if (!phase3.success) {

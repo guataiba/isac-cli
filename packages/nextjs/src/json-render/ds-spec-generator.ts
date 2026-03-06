@@ -1,0 +1,696 @@
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+
+interface DSSpec {
+  root: string;
+  elements: Record<string, { type: string; props: Record<string, unknown>; children?: string[] }>;
+}
+
+interface PrimitiveColor {
+  name: string;
+  varName: string;
+  hex: string;
+}
+
+interface SemanticToken {
+  name: string;
+  varName: string;
+  lightRef: string;
+  lightHex: string;
+  darkRef: string;
+  darkHex: string;
+}
+
+interface SemanticGroup {
+  category: string;
+  tokens: SemanticToken[];
+}
+
+/**
+ * Deterministically generates a json-render spec for the design system page.
+ * Parses globals.css + brand/icon data and builds the spec — no AI needed.
+ */
+export function generateDesignSystemSpec(cwd: string, url: string): DSSpec {
+  const globalsPath = join(cwd, "app/globals.css");
+  const css = existsSync(globalsPath) ? readFileSync(globalsPath, "utf-8") : "";
+
+  let domain = "example.com";
+  let siteName = "Example Site";
+  try {
+    const u = new URL(url);
+    domain = u.hostname.replace(/^www\./, "");
+    siteName = domain.split(".")[0].charAt(0).toUpperCase() + domain.split(".")[0].slice(1);
+  } catch { /* fallback */ }
+
+  // ── Parse primitives ──
+  const primitives: PrimitiveColor[] = [];
+  const sfRegex = /--sf-([\w-]+):\s*([^;]+);/g;
+  let m: RegExpExecArray | null;
+  while ((m = sfRegex.exec(css)) !== null) {
+    primitives.push({ name: m[1], varName: `--sf-${m[1]}`, hex: m[2].trim() });
+  }
+
+  // Build hex lookup for semantic token resolution
+  const hexLookup: Record<string, string> = {};
+  for (const p of primitives) {
+    hexLookup[p.name] = p.hex;
+  }
+
+  // ── Parse fonts ──
+  const fontSansMatch = css.match(/--font-sans:\s*([^;]+);/);
+  const fontDisplayMatch = css.match(/--font-display:\s*([^;]+);/);
+  const fontMonoMatch = css.match(/--font-mono:\s*([^;]+);/);
+  const fontSans = fontSansMatch?.[1]?.trim() ?? "system-ui, -apple-system, sans-serif";
+  const fontDisplay = fontDisplayMatch?.[1]?.trim() ?? fontSans;
+  const fontMono = fontMonoMatch?.[1]?.trim() ?? '"SF Mono", ui-monospace, monospace';
+
+  const families = [
+    { key: "sans", stack: fontSans },
+    { key: "display", stack: fontDisplay },
+    { key: "mono", stack: fontMono },
+  ];
+
+  const sizes = [
+    { label: "xs", size: "12px", sample: "Extra Small" },
+    { label: "sm", size: "14px", sample: "Small" },
+    { label: "base", size: "16px", sample: "Base" },
+    { label: "lg", size: "18px", sample: "Large" },
+    { label: "xl", size: "20px", sample: "Extra Large" },
+    { label: "2xl", size: "24px", sample: "Heading 2XL" },
+    { label: "3xl", size: "30px", sample: "Heading 3XL" },
+    { label: "4xl", size: "36px", sample: "Heading 4XL" },
+    { label: "display", size: "48px", sample: "Display" },
+  ];
+
+  const weights = [
+    { label: "regular", weight: 400 },
+    { label: "medium", weight: 500 },
+    { label: "semibold", weight: 600 },
+    { label: "bold", weight: 700 },
+  ];
+
+  // ── Parse semantic tokens ──
+  const rootBlock = css.match(/:root\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";
+  const darkBlock = css.match(/\[data-theme="dark"\]\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";
+
+  const colorRegex = /--color-([\w-]+):\s*var\(--sf-([\w-]+)\)/g;
+  const lightRefs: Record<string, string> = {};
+  let cm: RegExpExecArray | null;
+  while ((cm = colorRegex.exec(rootBlock)) !== null) {
+    lightRefs[cm[1]] = cm[2];
+  }
+  colorRegex.lastIndex = 0;
+  const darkRefs: Record<string, string> = {};
+  while ((cm = colorRegex.exec(darkBlock)) !== null) {
+    darkRefs[cm[1]] = cm[2];
+  }
+
+  const semanticCategories: Record<string, SemanticToken[]> = {};
+  for (const tokenName of Object.keys(lightRefs)) {
+    let category = "Accent";
+    if (tokenName.startsWith("bg-")) category = "Background";
+    else if (tokenName.startsWith("text-")) category = "Text";
+    else if (tokenName.startsWith("border-")) category = "Border";
+    else if (tokenName.startsWith("surface-")) category = "Surface";
+
+    if (!semanticCategories[category]) semanticCategories[category] = [];
+    const lightRef = lightRefs[tokenName];
+    const darkRef = darkRefs[tokenName] ?? lightRef;
+    semanticCategories[category].push({
+      name: tokenName,
+      varName: `--color-${tokenName}`,
+      lightRef,
+      lightHex: hexLookup[lightRef] ?? "#000000",
+      darkRef,
+      darkHex: hexLookup[darkRef] ?? "#000000",
+    });
+  }
+
+  const semanticGroups: SemanticGroup[] = Object.entries(semanticCategories)
+    .filter(([, tokens]) => tokens.length > 0)
+    .map(([category, tokens]) => ({ category, tokens }));
+
+  // ── Parse spacing ──
+  const spacingItems: { label: string; px: string }[] = [];
+  const spaceRegex = /--space-([\w-]+):\s*([^;]+);/g;
+  while ((m = spaceRegex.exec(css)) !== null) {
+    spacingItems.push({ label: m[1], px: m[2].trim() });
+  }
+
+  // ── Parse shadows ──
+  const shadowItems: { label: string; value: string }[] = [];
+  const shadowRegex = /--shadow-([\w-]+):\s*([^;]+);/g;
+  while ((m = shadowRegex.exec(css)) !== null) {
+    shadowItems.push({ label: m[1], value: m[2].trim() });
+  }
+
+  // ── Static radii ──
+  const radiiItems = [
+    { label: "sm", value: "4px" },
+    { label: "md", value: "8px" },
+    { label: "lg", value: "12px" },
+    { label: "xl", value: "16px" },
+    { label: "pill", value: "9999px" },
+  ];
+
+  // ── Read brand data ──
+  let tagline: string | null = null;
+  let description: string | null = null;
+  let logoUrl: string | null = null;
+  let faviconUrl: string | null = null;
+  try {
+    const brandPath = join(cwd, ".claude/branding/brand-data.json");
+    if (existsSync(brandPath)) {
+      const brand = JSON.parse(readFileSync(brandPath, "utf-8"));
+      if (brand.companyName) siteName = brand.companyName;
+      tagline = brand.tagline || null;
+      description = brand.description || null;
+      logoUrl = brand.logoUrl || null;
+      faviconUrl = brand.faviconUrl || null;
+    }
+  } catch { /* ignore */ }
+
+  // ── Read icon data ──
+  let iconLibrary = "none";
+  let iconNames: string[] = [];
+  let iconCount = 0;
+  try {
+    const iconPath = join(cwd, ".claude/icons/icon-data.json");
+    if (existsSync(iconPath)) {
+      const iconData = JSON.parse(readFileSync(iconPath, "utf-8"));
+      iconLibrary = iconData.library ?? "none";
+      iconNames = iconData.icons ?? [];
+      iconCount = iconData.count ?? 0;
+    }
+  } catch { /* ignore */ }
+
+  // ── Build spec ──
+  const children: string[] = ["header"];
+  const elements: DSSpec["elements"] = {};
+
+  // Header
+  elements["header"] = {
+    type: "DSHeader",
+    props: { siteName, domain },
+  };
+
+  // Brand Identity (only if there's data)
+  if (logoUrl || tagline || description) {
+    children.push("brand");
+    elements["brand"] = {
+      type: "DSBrandIdentity",
+      props: { name: siteName, tagline, description, logoUrl, faviconUrl },
+    };
+  }
+
+  // Color Palette
+  if (primitives.length > 0) {
+    children.push("palette");
+    elements["palette"] = {
+      type: "DSColorPalette",
+      props: {
+        title: "Color Palette",
+        subtitle: "Primitive color tokens extracted from CSS custom properties.",
+        colors: primitives,
+      },
+    };
+  }
+
+  // Semantic Tokens
+  if (semanticGroups.length > 0) {
+    children.push("semantics");
+    elements["semantics"] = {
+      type: "DSSemanticTokens",
+      props: {
+        title: "Semantic Tokens",
+        subtitle: "Token aliases that map to primitives, with automatic dark mode support.",
+        groups: semanticGroups,
+      },
+    };
+  }
+
+  // Typography
+  children.push("typography");
+  elements["typography"] = {
+    type: "DSTypography",
+    props: { title: "Typography", families, sizes, weights },
+  };
+
+  // Spacing
+  if (spacingItems.length > 0) {
+    children.push("spacing");
+    elements["spacing"] = {
+      type: "DSSpacing",
+      props: { title: "Spacing", items: spacingItems },
+    };
+  }
+
+  // Radii
+  children.push("radii");
+  elements["radii"] = {
+    type: "DSRadii",
+    props: { title: "Border Radius", items: radiiItems },
+  };
+
+  // Shadows
+  if (shadowItems.length > 0) {
+    children.push("shadows");
+    elements["shadows"] = {
+      type: "DSShadows",
+      props: { title: "Shadows", items: shadowItems },
+    };
+  }
+
+  // Components
+  children.push("components");
+  elements["components"] = {
+    type: "DSComponents",
+    props: { title: "Components" },
+  };
+
+  // Icons
+  if (iconCount > 0) {
+    children.push("icons");
+    elements["icons"] = {
+      type: "DSIcons",
+      props: { title: "Icons", library: iconLibrary, count: iconCount, names: iconNames },
+    };
+  }
+
+  // Footer
+  children.push("footer");
+  elements["footer"] = {
+    type: "DSFooter",
+    props: { domain },
+  };
+
+  // Page root
+  elements["page"] = {
+    type: "DSPage",
+    props: { siteName, domain },
+    children,
+  };
+
+  return { root: "page", elements };
+}
+
+/**
+ * Generate the DS page.tsx that renders the spec via Renderer.
+ */
+export function generateDSPageFromSpec(spec: DSSpec, siteName: string, domain: string): string {
+  const specJson = JSON.stringify(spec, null, 2);
+  return `import type { Metadata } from "next";
+import { DSPage } from "./json-render/ds-page";
+
+export const metadata: Metadata = {
+  title: "Design System \\u2014 ${siteName.replace(/"/g, '\\"')}",
+  description: "Design system tokens and components extracted from ${domain.replace(/"/g, '\\"')}",
+};
+
+const spec = ${specJson} as const;
+
+export default function DesignSystemPage() {
+  return <DSPage spec={spec} />;
+}
+`;
+}
+
+/**
+ * Generate the DSPage client component wrapping Renderer with DS registry.
+ * Renderer requires VisibilityProvider context, so we wrap it in JSONUIProvider.
+ */
+export function generateDSPageComponent(): string {
+  return `"use client";
+
+import { Renderer, JSONUIProvider } from "@json-render/react";
+import { dsRegistry } from "./ds-registry";
+
+interface DSPageProps {
+  spec: Parameters<typeof Renderer>[0]["spec"];
+}
+
+export function DSPage({ spec }: DSPageProps) {
+  return (
+    <JSONUIProvider registry={dsRegistry}>
+      <Renderer spec={spec} registry={dsRegistry} />
+    </JSONUIProvider>
+  );
+}
+`;
+}
+
+/**
+ * Generate the DS catalog source code inline for the target project.
+ */
+export function generateDSCatalogSource(): string {
+  return `import { defineCatalog } from "@json-render/core";
+import { schema } from "@json-render/react/schema";
+import { z } from "zod";
+
+export const dsCatalog = defineCatalog(schema, {
+  components: {
+    DSPage: {
+      props: z.object({ siteName: z.string(), domain: z.string() }),
+      slots: ["default"],
+      description: "Root wrapper for the design system documentation page.",
+    },
+    DSHeader: {
+      props: z.object({ siteName: z.string(), domain: z.string() }),
+      description: "Design system page header.",
+    },
+    DSBrandIdentity: {
+      props: z.object({
+        name: z.string(), tagline: z.string().nullable(), description: z.string().nullable(),
+        logoUrl: z.string().nullable(), faviconUrl: z.string().nullable(),
+      }),
+      description: "Brand identity section.",
+    },
+    DSColorPalette: {
+      props: z.object({
+        title: z.string(), subtitle: z.string().nullable(),
+        colors: z.array(z.object({ name: z.string(), varName: z.string(), hex: z.string() })),
+      }),
+      description: "Color swatch grid.",
+    },
+    DSSemanticTokens: {
+      props: z.object({
+        title: z.string(), subtitle: z.string().nullable(),
+        groups: z.array(z.object({
+          category: z.string(),
+          tokens: z.array(z.object({
+            name: z.string(), varName: z.string(),
+            lightRef: z.string(), lightHex: z.string(), darkRef: z.string(), darkHex: z.string(),
+          })),
+        })),
+      }),
+      description: "Semantic token table.",
+    },
+    DSTypography: {
+      props: z.object({
+        title: z.string(),
+        families: z.array(z.object({ key: z.string(), stack: z.string() })),
+        sizes: z.array(z.object({ label: z.string(), size: z.string(), sample: z.string() })),
+        weights: z.array(z.object({ label: z.string(), weight: z.number() })),
+      }),
+      description: "Typography section.",
+    },
+    DSSpacing: {
+      props: z.object({ title: z.string(), items: z.array(z.object({ label: z.string(), px: z.string() })) }),
+      description: "Spacing scale.",
+    },
+    DSRadii: {
+      props: z.object({ title: z.string(), items: z.array(z.object({ label: z.string(), value: z.string() })) }),
+      description: "Border radius showcase.",
+    },
+    DSShadows: {
+      props: z.object({ title: z.string(), items: z.array(z.object({ label: z.string(), value: z.string() })) }),
+      description: "Shadow showcase.",
+    },
+    DSComponents: {
+      props: z.object({ title: z.string() }),
+      description: "Component showcase.",
+    },
+    DSIcons: {
+      props: z.object({ title: z.string(), library: z.string(), count: z.number(), names: z.array(z.string()) }),
+      description: "Icon library section.",
+    },
+    DSFooter: {
+      props: z.object({ domain: z.string() }),
+      description: "Page footer.",
+    },
+  },
+  actions: {},
+});
+`;
+}
+
+/**
+ * Generate the DS registry source code inline for the target project.
+ */
+export function generateDSRegistrySource(): string {
+  return `import React from "react";
+import { defineRegistry } from "@json-render/react";
+import { dsCatalog } from "./ds-catalog";
+
+const fonts = {
+  sans: "var(--font-sans)",
+  display: "var(--font-display, var(--font-sans))",
+  mono: "var(--font-mono)",
+};
+
+function SectionWrapper({ title, children }: { title: string; children?: React.ReactNode }) {
+  return React.createElement("section", { style: { marginBottom: 64 } },
+    React.createElement("h2", {
+      style: { fontFamily: fonts.sans, fontSize: 24, fontWeight: 700, color: "var(--color-text-primary)", marginBottom: 24, paddingBottom: 12, borderBottom: "1px solid var(--color-border-primary)" },
+    }, title),
+    children,
+  );
+}
+
+function SubHeading({ children }: { children: React.ReactNode }) {
+  return React.createElement("h3", {
+    style: { fontSize: 14, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase" as const, letterSpacing: "0.05em", marginBottom: 16 },
+  }, children);
+}
+
+export const { registry: dsRegistry } = defineRegistry(dsCatalog, {
+  components: {
+    DSPage: ({ props, children }) => {
+      return React.createElement("div", {
+        style: { maxWidth: 960, margin: "0 auto", padding: "48px 24px", fontFamily: fonts.sans, color: "var(--color-text-primary)" },
+      }, children);
+    },
+    DSHeader: ({ props }) => {
+      return React.createElement("header", { style: { marginBottom: 64 } },
+        React.createElement("h1", {
+          style: { fontFamily: fonts.display, fontSize: 48, fontWeight: 700, letterSpacing: "-0.02em", marginBottom: 8 },
+        }, "Design System"),
+        React.createElement("p", { style: { fontSize: 16, color: "var(--color-text-secondary)" } },
+          "Tokens and components extracted from ",
+          React.createElement("span", { style: { fontWeight: 600, color: "var(--color-text-primary)" } }, props.domain),
+          " \\u2014 with dark mode support",
+        ),
+      );
+    },
+    DSBrandIdentity: ({ props }) => {
+      if (!props.logoUrl && !props.tagline && !props.description) return null;
+      return React.createElement(SectionWrapper, { title: "Brand Identity" },
+        React.createElement("div", {
+          style: { display: "flex", flexDirection: "column" as const, gap: 20, padding: 32, background: "var(--color-bg-secondary)", borderRadius: 12, border: "1px solid var(--color-border-primary)" },
+        },
+          React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 20 } },
+            props.logoUrl ? React.createElement("img", { src: props.logoUrl, alt: props.name + " logo", style: { height: 48, maxWidth: 200, objectFit: "contain" as const } }) : null,
+            React.createElement("div", null,
+              React.createElement("h3", { style: { fontFamily: fonts.display, fontSize: 28, fontWeight: 700, margin: 0, color: "var(--color-text-primary)" } }, props.name),
+              props.tagline ? React.createElement("p", { style: { fontSize: 16, color: "var(--color-text-secondary)", margin: "4px 0 0" } }, props.tagline) : null,
+            ),
+          ),
+          props.description ? React.createElement("p", { style: { fontSize: 14, color: "var(--color-text-secondary)", lineHeight: 1.6, margin: 0, maxWidth: 640 } }, props.description) : null,
+          props.faviconUrl ? React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 12 } },
+            React.createElement("img", { src: props.faviconUrl, alt: "Favicon", style: { width: 24, height: 24 } }),
+            React.createElement("code", { style: { fontFamily: fonts.mono, fontSize: 11, color: "var(--color-text-tertiary)" } }, props.faviconUrl),
+          ) : null,
+        ),
+      );
+    },
+    DSColorPalette: ({ props }) => {
+      return React.createElement(SectionWrapper, { title: props.title },
+        props.subtitle ? React.createElement("p", { style: { fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 24 } }, props.subtitle) : null,
+        React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 12 } },
+          ...props.colors.map((c: any) =>
+            React.createElement("div", { key: c.name, style: { border: "1px solid var(--color-border-primary)", borderRadius: 8, overflow: "hidden" } },
+              React.createElement("div", { style: { height: 56, background: c.hex, borderBottom: "1px solid var(--color-border-primary)" } }),
+              React.createElement("div", { style: { padding: "8px 10px" } },
+                React.createElement("div", { style: { fontSize: 12, fontWeight: 600, marginBottom: 2 } }, c.name),
+                React.createElement("code", { style: { fontSize: 10, color: "var(--color-text-secondary)", fontFamily: fonts.mono } }, c.varName),
+                React.createElement("div", { style: { fontSize: 10, color: "var(--color-text-tertiary)", fontFamily: fonts.mono, marginTop: 2 } }, c.hex),
+              ),
+            ),
+          ),
+        ),
+      );
+    },
+    DSSemanticTokens: ({ props }) => {
+      return React.createElement(SectionWrapper, { title: props.title },
+        props.subtitle ? React.createElement("p", { style: { fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 32 } }, props.subtitle) : null,
+        ...props.groups.map((group: any) =>
+          React.createElement("div", { key: group.category, style: { marginBottom: 40 } },
+            React.createElement(SubHeading, null, group.category),
+            React.createElement("div", { style: { border: "1px solid var(--color-border-primary)", borderRadius: 8, overflow: "hidden" } },
+              React.createElement("div", {
+                style: { display: "grid", gridTemplateColumns: "1fr 56px 120px 56px 120px", gap: 0, padding: "8px 16px", background: "var(--color-bg-secondary)", borderBottom: "1px solid var(--color-border-primary)", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase" as const, letterSpacing: "0.05em" },
+              },
+                React.createElement("span", null, "Token"),
+                React.createElement("span", { style: { textAlign: "center" as const } }, "Light"),
+                React.createElement("span", null, "Reference"),
+                React.createElement("span", { style: { textAlign: "center" as const } }, "Dark"),
+                React.createElement("span", null, "Reference"),
+              ),
+              ...group.tokens.map((t: any) =>
+                React.createElement("div", {
+                  key: t.name,
+                  style: { display: "grid", gridTemplateColumns: "1fr 56px 120px 56px 120px", gap: 0, padding: "10px 16px", borderBottom: "1px solid var(--color-border-subtle)", alignItems: "center", fontSize: 13 },
+                },
+                  React.createElement("code", { style: { fontFamily: fonts.mono, fontSize: 12, color: "var(--color-text-primary)" } }, t.varName),
+                  React.createElement("div", { style: { display: "flex", justifyContent: "center" } },
+                    React.createElement("div", { style: { width: 32, height: 32, borderRadius: 6, background: t.lightHex, border: "1px solid var(--color-border-primary)" } }),
+                  ),
+                  React.createElement("div", null,
+                    React.createElement("code", { style: { fontFamily: fonts.mono, fontSize: 11, color: "var(--color-text-secondary)", display: "block" } }, t.lightRef),
+                    React.createElement("code", { style: { fontFamily: fonts.mono, fontSize: 10, color: "var(--color-text-tertiary)" } }, t.lightHex),
+                  ),
+                  React.createElement("div", { style: { display: "flex", justifyContent: "center" } },
+                    React.createElement("div", { style: { width: 32, height: 32, borderRadius: 6, background: t.darkHex, border: "1px solid var(--color-border-primary)" } }),
+                  ),
+                  React.createElement("div", null,
+                    React.createElement("code", { style: { fontFamily: fonts.mono, fontSize: 11, color: "var(--color-text-secondary)", display: "block" } }, t.darkRef),
+                    React.createElement("code", { style: { fontFamily: fonts.mono, fontSize: 10, color: "var(--color-text-tertiary)" } }, t.darkHex),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    },
+    DSTypography: ({ props }) => {
+      return React.createElement(SectionWrapper, { title: props.title },
+        React.createElement(SubHeading, null, "Font Families"),
+        React.createElement("div", { style: { marginBottom: 32 } },
+          ...props.families.map((f: any) =>
+            React.createElement("div", { key: f.key, style: { display: "flex", flexDirection: "column" as const, gap: 8, padding: 16, borderBottom: "1px solid var(--color-border-subtle)" } },
+              React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
+                React.createElement("code", { style: { fontFamily: fonts.mono, fontSize: 12, fontWeight: 600, color: "var(--color-text-primary)" } }, "--font-" + f.key),
+                React.createElement("code", { style: { fontFamily: fonts.mono, fontSize: 11, color: "var(--color-text-tertiary)", background: "var(--color-bg-tertiary)", padding: "2px 8px", borderRadius: 4, maxWidth: 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const } }, f.stack),
+              ),
+              React.createElement("span", { style: { fontFamily: "var(--font-" + f.key + ", " + f.stack + ")", fontSize: 20 } }, "The quick brown fox jumps over the lazy dog"),
+            ),
+          ),
+        ),
+        React.createElement(SubHeading, null, "Size Scale"),
+        React.createElement("div", { style: { marginBottom: 32 } },
+          ...props.sizes.map((fs: any) =>
+            React.createElement("div", { key: fs.label, style: { display: "flex", alignItems: "baseline", gap: 16, padding: "8px 0", borderBottom: "1px solid var(--color-border-subtle)" } },
+              React.createElement("code", { style: { fontFamily: fonts.mono, fontSize: 13, color: "var(--color-text-secondary)", minWidth: 80 } }, fs.label),
+              React.createElement("code", { style: { fontFamily: fonts.mono, fontSize: 12, color: "var(--color-text-tertiary)", minWidth: 60 } }, fs.size),
+              React.createElement("span", { style: { fontFamily: fonts.sans, fontSize: fs.size } }, fs.sample),
+            ),
+          ),
+        ),
+        React.createElement(SubHeading, null, "Weights"),
+        React.createElement("div", { style: { marginBottom: 32 } },
+          ...props.weights.map((fw: any) =>
+            React.createElement("div", { key: fw.label, style: { display: "flex", alignItems: "center", gap: 16, padding: "8px 0", borderBottom: "1px solid var(--color-border-subtle)" } },
+              React.createElement("code", { style: { fontFamily: fonts.mono, fontSize: 13, color: "var(--color-text-secondary)", minWidth: 100 } }, fw.label),
+              React.createElement("code", { style: { fontFamily: fonts.mono, fontSize: 12, color: "var(--color-text-tertiary)", minWidth: 40 } }, String(fw.weight)),
+              React.createElement("span", { style: { fontFamily: fonts.sans, fontSize: 18, fontWeight: fw.weight } }, "The quick brown fox jumps over the lazy dog"),
+            ),
+          ),
+        ),
+      );
+    },
+    DSSpacing: ({ props }) => {
+      if (props.items.length === 0) return null;
+      return React.createElement(SectionWrapper, { title: props.title },
+        React.createElement("div", { style: { display: "flex", flexDirection: "column" as const, gap: 6 } },
+          ...props.items.map((s: any) =>
+            React.createElement("div", { key: s.label, style: { display: "flex", alignItems: "center", gap: 16 } },
+              React.createElement("code", { style: { fontFamily: fonts.mono, fontSize: 12, color: "var(--color-text-secondary)", minWidth: 48, textAlign: "right" as const } }, s.label),
+              React.createElement("div", { style: { height: 16, width: s.px, background: "var(--color-accent)", borderRadius: 4, minWidth: 4 } }),
+              React.createElement("code", { style: { fontFamily: fonts.mono, fontSize: 11, color: "var(--color-text-tertiary)" } }, s.px),
+            ),
+          ),
+        ),
+      );
+    },
+    DSRadii: ({ props }) => {
+      return React.createElement(SectionWrapper, { title: props.title },
+        React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 16 } },
+          ...props.items.map((r: any) =>
+            React.createElement("div", { key: r.label, style: { textAlign: "center" as const } },
+              React.createElement("div", { style: { width: 80, height: 80, margin: "0 auto 8px", background: "var(--color-accent)", borderRadius: r.value, opacity: 0.8 } }),
+              React.createElement("div", { style: { fontSize: 13, fontWeight: 600 } }, r.label),
+              React.createElement("code", { style: { fontSize: 11, color: "var(--color-text-secondary)", fontFamily: fonts.mono } }, r.value),
+            ),
+          ),
+        ),
+      );
+    },
+    DSShadows: ({ props }) => {
+      if (props.items.length === 0) return null;
+      return React.createElement(SectionWrapper, { title: props.title },
+        React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 20 } },
+          ...props.items.map((s: any) =>
+            React.createElement("div", { key: s.label, style: { display: "flex", flexDirection: "column" as const, alignItems: "center", gap: 12 } },
+              React.createElement("div", { style: { width: "100%", height: 80, background: "var(--color-bg-secondary)", borderRadius: 12, boxShadow: s.value, border: "1px solid var(--color-border-subtle)" } }),
+              React.createElement("div", { style: { textAlign: "center" as const } },
+                React.createElement("div", { style: { fontSize: 13, fontWeight: 600 } }, s.label),
+                React.createElement("code", { style: { fontSize: 10, color: "var(--color-text-tertiary)", fontFamily: fonts.mono } }, s.value),
+              ),
+            ),
+          ),
+        ),
+      );
+    },
+    DSComponents: ({ props }) => {
+      return React.createElement(SectionWrapper, { title: props.title },
+        React.createElement(SubHeading, null, "Buttons"),
+        React.createElement("div", { style: { display: "flex", flexWrap: "wrap" as const, gap: 12, marginBottom: 32 } },
+          React.createElement("button", { style: { padding: "10px 24px", fontSize: 14, fontWeight: 600, fontFamily: fonts.sans, background: "var(--color-accent)", color: "var(--sf-white)", border: "none", borderRadius: 8, cursor: "pointer" } }, "Primary"),
+          React.createElement("button", { style: { padding: "10px 24px", fontSize: 14, fontWeight: 600, fontFamily: fonts.sans, background: "var(--color-bg-secondary)", color: "var(--color-text-primary)", border: "1px solid var(--color-border-primary)", borderRadius: 8, cursor: "pointer" } }, "Secondary"),
+          React.createElement("button", { style: { padding: "10px 24px", fontSize: 14, fontWeight: 600, fontFamily: fonts.sans, background: "transparent", color: "var(--color-accent)", border: "1px solid var(--color-accent)", borderRadius: 8, cursor: "pointer" } }, "Outline"),
+          React.createElement("button", { style: { padding: "10px 24px", fontSize: 14, fontWeight: 600, fontFamily: fonts.sans, background: "transparent", color: "var(--color-text-secondary)", border: "none", borderRadius: 8, cursor: "pointer", textDecoration: "underline" } }, "Ghost"),
+        ),
+        React.createElement(SubHeading, null, "Cards"),
+        React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16, marginBottom: 32 } },
+          React.createElement("div", { style: { padding: 24, background: "var(--color-bg-primary)", border: "1px solid var(--color-border-primary)", borderRadius: 12 } },
+            React.createElement("h4", { style: { fontSize: 16, fontWeight: 600, marginBottom: 8 } }, "Default Card"),
+            React.createElement("p", { style: { fontSize: 14, color: "var(--color-text-secondary)", lineHeight: 1.5 } }, "A basic card using surface and border tokens."),
+          ),
+          React.createElement("div", { style: { padding: 24, background: "var(--color-bg-secondary)", border: "1px solid var(--color-border-subtle)", borderRadius: 12, boxShadow: "0 4px 12px rgba(0,0,0,0.06)" } },
+            React.createElement("h4", { style: { fontSize: 16, fontWeight: 600, marginBottom: 8 } }, "Elevated Card"),
+            React.createElement("p", { style: { fontSize: 14, color: "var(--color-text-secondary)", lineHeight: 1.5 } }, "A card with elevation using box-shadow for depth."),
+          ),
+        ),
+        React.createElement(SubHeading, null, "Badges"),
+        React.createElement("div", { style: { display: "flex", flexWrap: "wrap" as const, gap: 8, marginBottom: 32 } },
+          ...["TypeScript", "JavaScript", "Python", "Rust", "Go"].map((lang) =>
+            React.createElement("span", { key: lang, style: { display: "inline-block", padding: "4px 12px", fontSize: 12, fontWeight: 500, fontFamily: fonts.sans, background: "var(--color-bg-tertiary)", color: "var(--color-text-secondary)", borderRadius: 9999, border: "1px solid var(--color-border-subtle)" } }, lang),
+          ),
+        ),
+        React.createElement(SubHeading, null, "Input"),
+        React.createElement("div", { style: { maxWidth: 400, marginBottom: 32 } },
+          React.createElement("div", { style: { height: 44, padding: "0 16px", display: "flex", alignItems: "center", background: "var(--color-bg-secondary)", border: "1px solid var(--color-border-primary)", borderRadius: 8, fontSize: 14, color: "var(--color-text-tertiary)" } }, "Search tokens..."),
+        ),
+        React.createElement(SubHeading, null, "Text Hierarchy"),
+        React.createElement("div", { style: { padding: 24, background: "var(--color-bg-secondary)", borderRadius: 12, border: "1px solid var(--color-border-subtle)" } },
+          React.createElement("div", { style: { fontSize: 24, fontWeight: 700, fontFamily: fonts.display, marginBottom: 4, color: "var(--color-text-primary)" } }, "Heading"),
+          React.createElement("div", { style: { fontSize: 16, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 4 } }, "Subheading with medium weight"),
+          React.createElement("div", { style: { fontSize: 14, color: "var(--color-text-secondary)", lineHeight: 1.6, marginBottom: 4 } }, "Body text using secondary color for comfortable reading."),
+          React.createElement("div", { style: { fontSize: 12, color: "var(--color-text-tertiary)" } }, "Caption text \\u2014 tertiary color for supplementary information"),
+        ),
+      );
+    },
+    DSIcons: ({ props }) => {
+      if (props.count === 0) return null;
+      return React.createElement(SectionWrapper, { title: props.title },
+        React.createElement("div", { style: { marginBottom: 16, display: "flex", alignItems: "center", gap: 12 } },
+          React.createElement("span", { style: { display: "inline-block", padding: "4px 12px", fontSize: 12, fontWeight: 600, fontFamily: fonts.mono, background: "var(--color-bg-tertiary)", color: "var(--color-text-secondary)", borderRadius: 6, border: "1px solid var(--color-border-subtle)" } }, props.library),
+          React.createElement("span", { style: { fontSize: 13, color: "var(--color-text-tertiary)" } }, props.count + " icon elements detected"),
+        ),
+        props.names.length > 0 ? React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 8 } },
+          ...props.names.map((name: string) =>
+            React.createElement("div", { key: name, style: { padding: "8px 12px", fontSize: 12, fontFamily: fonts.mono, color: "var(--color-text-primary)", background: "var(--color-bg-secondary)", border: "1px solid var(--color-border-subtle)", borderRadius: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const } }, name),
+          ),
+        ) : null,
+      );
+    },
+    DSFooter: ({ props }) => {
+      return React.createElement("footer", {
+        style: { marginTop: 64, paddingTop: 24, borderTop: "1px solid var(--color-border-primary)", fontSize: 13, color: "var(--color-text-tertiary)", textAlign: "center" as const },
+      }, "Extracted from " + props.domain + " \\u2014 Design System Documentation");
+    },
+  },
+});
+`;
+}

@@ -80,6 +80,7 @@ Walks you through creating an `isac.config.json` with your project preferences (
 | `--framework <name>` | Framework adapter (default: `nextjs`) |
 | `--max-retries <n>` | Max verification retries (default: 3) |
 | `--stop-after <phase>` | Stop after: `screenshots`, `design-system`, or `planning` |
+| `--engine <name>` | Rendering engine: `json-render` (default) or `legacy` |
 
 ## Try it from scratch
 
@@ -173,6 +174,37 @@ isac-cli/
 | `app/components/theme-toggle.tsx` | Theme toggle for main page |
 | `public/fonts/*.woff2` | Downloaded web fonts |
 | `app/page.tsx` | Generated page (replicate mode only) |
+| `app/json-render/isac-page.tsx` | Client component with Renderer (json-render engine only) |
+| `app/json-render/registry.ts` | Component registry re-export (json-render engine only) |
+
+## Rendering engines
+
+ISAC supports two rendering engines for page generation (Phase 2 + 3):
+
+### json-render (default)
+
+Uses [json-render](https://github.com/vercel-labs/json-render) by Vercel Labs — a Generative UI framework. Instead of generating free-form JSX code, the AI generates a **structured JSON spec** constrained to a catalog of 14 pre-defined components (Header, Hero, FeatureGrid, StatsBar, DataTable, Testimonials, PricingTable, CTA, FAQ, ContentBlock, LogoCloud, Footer, CustomHTML, and a Page wrapper).
+
+The spec is validated against the catalog schema, then rendered deterministically using React components — no type-check needed, no code generation errors.
+
+```bash
+# Uses json-render by default
+isac capture https://example.com --replicate
+```
+
+**Benefits:**
+- Phase 3 is always $0.00 (deterministic rendering, no Claude needed)
+- No type-check failures — the spec is validated, not compiled
+- Consistent output — AI can only use components you defined
+- `catalog.prompt()` auto-generates the system prompt from your component definitions
+
+### legacy
+
+The original pipeline where Claude generates JSX code directly. Falls back to Claude when the deterministic path fails type-check.
+
+```bash
+isac capture https://example.com --replicate --engine legacy
+```
 
 ## Pipeline phases
 
@@ -181,8 +213,8 @@ isac-cli/
 | **Phase 0** | Navigate to URL, extract fonts/colors/branding/icons and capture screenshots | agent-browser (deterministic, $0.00) |
 | **Phase 1A** | Generate `globals.css` from extracted JSON data | Pure TypeScript (no LLM) |
 | **Phase 1B** | Build design system documentation (`data.ts`) | Pure TypeScript (no LLM) |
-| **Phase 2** | Plan page structure from screenshots | Claude |
-| **Phase 3** | Implement the page | Claude |
+| **Phase 2** | Plan page structure from screenshots | Claude (outputs json-render spec or PagePlan depending on engine) |
+| **Phase 3** | Implement the page | json-render: deterministic ($0.00) / legacy: Claude or deterministic |
 | **Phase 4** | Visual verification with correction loop | Claude + agent-browser |
 
 In **design-system** mode (default), the pipeline runs Phase 0 → 1A → 1B and stops.
