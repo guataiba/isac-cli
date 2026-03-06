@@ -323,15 +323,69 @@ export const { registry: dsRegistry } = defineRegistry(dsCatalog, {
     },
 
     DSComponents: ({ props }) => {
+      const pb = props.primaryButton;
+      const sb = props.secondaryButton;
+      const primaryStyle = pb ? {
+        padding: pb.padding, fontSize: pb.fontSize, fontWeight: pb.fontWeight,
+        fontFamily: fonts.sans, background: pb.bg, color: pb.color,
+        border: pb.border || "none", borderRadius: pb.borderRadius,
+        boxShadow: pb.boxShadow || "none", cursor: "pointer",
+      } : {
+        padding: "10px 24px", fontSize: 14, fontWeight: 600,
+        fontFamily: fonts.sans, background: "var(--color-accent)", color: "var(--sf-white)",
+        border: "none", borderRadius: 8, cursor: "pointer",
+      };
+      const secondaryStyle = sb ? {
+        padding: sb.padding, fontSize: sb.fontSize, fontWeight: sb.fontWeight,
+        fontFamily: fonts.sans, background: sb.bg, color: sb.color,
+        border: sb.border || "1px solid var(--color-border-primary)", borderRadius: sb.borderRadius,
+        boxShadow: sb.boxShadow || "none", cursor: "pointer",
+      } : {
+        padding: "10px 24px", fontSize: 14, fontWeight: 600,
+        fontFamily: fonts.sans, background: "var(--color-bg-secondary)", color: "var(--color-text-primary)",
+        border: "1px solid var(--color-border-primary)", borderRadius: 8, cursor: "pointer",
+      };
       return React.createElement(SectionWrapper, { title: props.title },
         // Buttons
         React.createElement(SubHeading, null, "Buttons"),
-        React.createElement("div", { style: { display: "flex", flexWrap: "wrap" as const, gap: 12, marginBottom: 32 } },
-          React.createElement("button", { style: { padding: "10px 24px", fontSize: 14, fontWeight: 600, fontFamily: fonts.sans, background: "var(--color-accent)", color: "var(--sf-white)", border: "none", borderRadius: 8, cursor: "pointer" } }, "Primary"),
-          React.createElement("button", { style: { padding: "10px 24px", fontSize: 14, fontWeight: 600, fontFamily: fonts.sans, background: "var(--color-bg-secondary)", color: "var(--color-text-primary)", border: "1px solid var(--color-border-primary)", borderRadius: 8, cursor: "pointer" } }, "Secondary"),
-          React.createElement("button", { style: { padding: "10px 24px", fontSize: 14, fontWeight: 600, fontFamily: fonts.sans, background: "transparent", color: "var(--color-accent)", border: "1px solid var(--color-accent)", borderRadius: 8, cursor: "pointer" } }, "Outline"),
-          React.createElement("button", { style: { padding: "10px 24px", fontSize: 14, fontWeight: 600, fontFamily: fonts.sans, background: "transparent", color: "var(--color-text-secondary)", border: "none", borderRadius: 8, cursor: "pointer", textDecoration: "underline" } }, "Ghost"),
+        // Captured styles info
+        pb ? React.createElement("p", { style: { fontSize: 12, color: "var(--color-text-tertiary)", marginBottom: 12, fontStyle: "italic" as const } }, "Styles captured from the reference site") : null,
+        React.createElement("div", { style: { display: "flex", flexWrap: "wrap" as const, gap: 12, marginBottom: 16 } },
+          React.createElement("button", { style: primaryStyle }, "Primary"),
+          React.createElement("button", { style: secondaryStyle }, "Secondary"),
+          React.createElement("button", { style: { ...secondaryStyle, background: "transparent", border: `1px solid ${pb?.bg || "var(--color-accent)"}`, color: pb?.bg || "var(--color-accent)" } }, "Outline"),
+          React.createElement("button", { style: { padding: primaryStyle.padding, fontSize: primaryStyle.fontSize, fontWeight: primaryStyle.fontWeight, fontFamily: fonts.sans, background: "transparent", color: "var(--color-text-secondary)", border: "none", borderRadius: primaryStyle.borderRadius, cursor: "pointer", textDecoration: "underline" } }, "Ghost"),
         ),
+        // Button spec table
+        pb ? React.createElement("div", { style: { border: "1px solid var(--color-border-primary)", borderRadius: 8, overflow: "hidden", marginBottom: 32, fontSize: 12 } },
+          React.createElement("div", { style: { display: "grid", gridTemplateColumns: "100px 1fr 1fr", padding: "8px 16px", background: "var(--color-bg-secondary)", borderBottom: "1px solid var(--color-border-primary)", fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase" as const, letterSpacing: "0.05em", fontSize: 11 } },
+            React.createElement("span", null, "Property"),
+            React.createElement("span", null, "Primary"),
+            React.createElement("span", null, "Secondary"),
+          ),
+          ...[
+            ["Background", pb.bg, sb?.bg || "transparent"],
+            ["Text Color", pb.color, sb?.color || "inherit"],
+            ["Radius", pb.borderRadius, sb?.borderRadius || pb.borderRadius],
+            ["Padding", pb.padding, sb?.padding || pb.padding],
+            ["Font Size", pb.fontSize, sb?.fontSize || pb.fontSize],
+            ["Weight", pb.fontWeight, sb?.fontWeight || pb.fontWeight],
+            ["Border", pb.border || "none", sb?.border || "none"],
+            ["Shadow", pb.boxShadow || "none", sb?.boxShadow || "none"],
+          ].map(([label, pVal, sVal]) =>
+            React.createElement("div", { key: label, style: { display: "grid", gridTemplateColumns: "100px 1fr 1fr", padding: "8px 16px", borderBottom: "1px solid var(--color-border-subtle)", alignItems: "center" } },
+              React.createElement("span", { style: { fontWeight: 500, color: "var(--color-text-secondary)" } }, label),
+              React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
+                (label === "Background" || label === "Text Color") ? React.createElement("div", { style: { width: 14, height: 14, borderRadius: 3, background: pVal as string, border: "1px solid var(--color-border-subtle)", flexShrink: 0 } }) : null,
+                React.createElement("code", { style: { fontFamily: fonts.mono, color: "var(--color-text-primary)", fontSize: 11 } }, pVal),
+              ),
+              React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
+                (label === "Background" || label === "Text Color") ? React.createElement("div", { style: { width: 14, height: 14, borderRadius: 3, background: sVal as string, border: "1px solid var(--color-border-subtle)", flexShrink: 0 } }) : null,
+                React.createElement("code", { style: { fontFamily: fonts.mono, color: "var(--color-text-primary)", fontSize: 11 } }, sVal),
+              ),
+            ),
+          ),
+        ) : React.createElement("div", { style: { marginBottom: 32 } }),
         // Cards
         React.createElement(SubHeading, null, "Cards"),
         React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16, marginBottom: 32 } },

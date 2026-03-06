@@ -165,6 +165,42 @@ export const COLOR_EXTRACTION_SCRIPT = () => {
     if (val) cssVars[name] = rgbToHex(val) || val;
   }
 
+  // ── Capture detailed button styles ──
+  const getButtonStyles = (el: Element | null): Record<string, string | null> | null => {
+    if (!el) return null;
+    const s = getComputedStyle(el);
+    return {
+      bg: rgbToHex(s.backgroundColor),
+      color: rgbToHex(s.color),
+      borderRadius: s.borderRadius,
+      borderWidth: s.borderWidth,
+      borderColor: s.borderColor !== "rgba(0, 0, 0, 0)" ? rgbToHex(s.borderColor) : null,
+      borderStyle: s.borderStyle !== "none" ? s.borderStyle : null,
+      padding: s.padding,
+      fontSize: s.fontSize,
+      fontWeight: s.fontWeight,
+      fontFamily: s.fontFamily,
+      letterSpacing: s.letterSpacing !== "normal" ? s.letterSpacing : null,
+      textTransform: s.textTransform !== "none" ? s.textTransform : null,
+      boxShadow: s.boxShadow !== "none" ? s.boxShadow : null,
+    };
+  };
+
+  // Find a secondary/outline button (different style from primary)
+  let btnSecondary: Element | null = null;
+  const primaryBg = btn ? rgbToHex(getComputedStyle(btn).backgroundColor) : null;
+  for (const el of btnCandidates) {
+    if (!isVisible(el) || el === btn) continue;
+    const s = getComputedStyle(el);
+    const bg = s.backgroundColor;
+    const hex = rgbToHex(bg);
+    // Secondary: has border but transparent/white bg, or different bg from primary
+    const isTransparentBg = bg === "transparent" || bg.startsWith("rgba(0, 0, 0, 0)") || hex === "#ffffff" || hex === pageBg;
+    const hasBorder = s.borderWidth !== "0px" && s.borderStyle !== "none" && s.borderColor !== "rgba(0, 0, 0, 0)";
+    if (isTransparentBg && hasBorder) { btnSecondary = el; break; }
+    if (hex !== primaryBg && hex !== "#ffffff" && hex !== "#000000") { btnSecondary = el; break; }
+  }
+
   const result: Record<string, unknown> = {
     backgrounds: {
       page: pageBg,
@@ -187,6 +223,10 @@ export const COLOR_EXTRACTION_SCRIPT = () => {
     },
     surfaces: {
       input: getColor(input, "backgroundColor"),
+    },
+    buttons: {
+      primary: getButtonStyles(btn),
+      secondary: getButtonStyles(btnSecondary),
     },
   };
   if (Object.keys(cssVars).length > 0) result._cssVars = cssVars;

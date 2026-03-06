@@ -157,6 +157,18 @@ export const dsCatalog = defineCatalog(schema, {
     DSComponents: {
       props: z.object({
         title: z.string(),
+        primaryButton: z.object({
+          bg: z.string(), color: z.string(), borderRadius: z.string(),
+          border: z.string().nullable(), padding: z.string(),
+          fontSize: z.string(), fontWeight: z.string(),
+          boxShadow: z.string().nullable(),
+        }).nullable(),
+        secondaryButton: z.object({
+          bg: z.string(), color: z.string(), borderRadius: z.string(),
+          border: z.string().nullable(), padding: z.string(),
+          fontSize: z.string(), fontWeight: z.string(),
+          boxShadow: z.string().nullable(),
+        }).nullable(),
       }),
       description: "Component showcase with buttons, cards, badges, input, glass surface, and text hierarchy.",
     },

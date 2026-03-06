@@ -212,6 +212,41 @@ export function generateDesignSystemSpec(cwd: string, url: string): DSSpec {
     }
   } catch { /* ignore */ }
 
+  // ── Read button styles from color data ──
+  interface ButtonStyle {
+    bg: string; color: string; borderRadius: string;
+    border: string | null; padding: string;
+    fontSize: string; fontWeight: string;
+    boxShadow: string | null;
+  }
+  let primaryButton: ButtonStyle | null = null;
+  let secondaryButton: ButtonStyle | null = null;
+  try {
+    const colorPath = join(cwd, ".claude/colors/color-data.json");
+    if (existsSync(colorPath)) {
+      const colorData = JSON.parse(readFileSync(colorPath, "utf-8"));
+      const formatBtn = (raw: Record<string, string | null> | null): ButtonStyle | null => {
+        if (!raw || !raw.bg || raw.bg === "transparent" || raw.bg === "rgba(0, 0, 0, 0)") return null;
+        return {
+          bg: raw.bg,
+          color: raw.color || "#ffffff",
+          borderRadius: raw.borderRadius || "8px",
+          border: (raw.borderWidth && raw.borderStyle && raw.borderWidth !== "0px")
+            ? `${raw.borderWidth} ${raw.borderStyle} ${raw.borderColor || "transparent"}`
+            : null,
+          padding: raw.padding || "10px 24px",
+          fontSize: raw.fontSize || "14px",
+          fontWeight: raw.fontWeight || "600",
+          boxShadow: raw.boxShadow || null,
+        };
+      };
+      if (colorData.buttons) {
+        primaryButton = formatBtn(colorData.buttons.primary);
+        secondaryButton = formatBtn(colorData.buttons.secondary);
+      }
+    }
+  } catch { /* ignore */ }
+
   // ── Read icon data ──
   let iconLibrary = "none";
   let iconNames: string[] = [];
@@ -317,7 +352,7 @@ export function generateDesignSystemSpec(cwd: string, url: string): DSSpec {
   const componentsChildren: string[] = ["components"];
   elements["components"] = {
     type: "DSComponents",
-    props: { title: "Components" },
+    props: { title: "Components", primaryButton, secondaryButton },
   };
   if (iconCount > 0) {
     componentsChildren.push("icons");
@@ -522,7 +557,21 @@ export const dsCatalog = defineCatalog(schema, {
       description: "Section background showcase.",
     },
     DSComponents: {
-      props: z.object({ title: z.string() }),
+      props: z.object({
+        title: z.string(),
+        primaryButton: z.object({
+          bg: z.string(), color: z.string(), borderRadius: z.string(),
+          border: z.string().nullable(), padding: z.string(),
+          fontSize: z.string(), fontWeight: z.string(),
+          boxShadow: z.string().nullable(),
+        }).nullable(),
+        secondaryButton: z.object({
+          bg: z.string(), color: z.string(), borderRadius: z.string(),
+          border: z.string().nullable(), padding: z.string(),
+          fontSize: z.string(), fontWeight: z.string(),
+          boxShadow: z.string().nullable(),
+        }).nullable(),
+      }),
       description: "Component showcase.",
     },
     DSIcons: {
@@ -847,13 +896,36 @@ export const { registry: dsRegistry } = defineRegistry(dsCatalog, {
       );
     },
     DSComponents: ({ props }) => {
+      var pb = props.primaryButton;
+      var sb = props.secondaryButton;
+      var primaryStyle = pb ? {
+        padding: pb.padding, fontSize: pb.fontSize, fontWeight: pb.fontWeight,
+        fontFamily: fonts.sans, background: pb.bg, color: pb.color,
+        border: pb.border || "none", borderRadius: pb.borderRadius,
+        boxShadow: pb.boxShadow || "none", cursor: "pointer",
+      } : {
+        padding: "10px 24px", fontSize: 14, fontWeight: 600,
+        fontFamily: fonts.sans, background: "var(--color-accent)", color: "var(--sf-white)",
+        border: "none", borderRadius: 8, cursor: "pointer",
+      };
+      var secondaryStyle = sb ? {
+        padding: sb.padding, fontSize: sb.fontSize, fontWeight: sb.fontWeight,
+        fontFamily: fonts.sans, background: sb.bg, color: sb.color,
+        border: sb.border || "1px solid var(--color-border-primary)", borderRadius: sb.borderRadius,
+        boxShadow: sb.boxShadow || "none", cursor: "pointer",
+      } : {
+        padding: "10px 24px", fontSize: 14, fontWeight: 600,
+        fontFamily: fonts.sans, background: "var(--color-bg-secondary)", color: "var(--color-text-primary)",
+        border: "1px solid var(--color-border-primary)", borderRadius: 8, cursor: "pointer",
+      };
       return React.createElement(SectionWrapper, { title: props.title },
         React.createElement(SubHeading, null, "Buttons"),
-        React.createElement("div", { style: { display: "flex", flexWrap: "wrap" as const, gap: 12, marginBottom: 32 } },
-          React.createElement("button", { style: { padding: "10px 24px", fontSize: 14, fontWeight: 600, fontFamily: fonts.sans, background: "var(--color-accent)", color: "var(--sf-white)", border: "none", borderRadius: 8, cursor: "pointer" } }, "Primary"),
-          React.createElement("button", { style: { padding: "10px 24px", fontSize: 14, fontWeight: 600, fontFamily: fonts.sans, background: "var(--color-bg-secondary)", color: "var(--color-text-primary)", border: "1px solid var(--color-border-primary)", borderRadius: 8, cursor: "pointer" } }, "Secondary"),
-          React.createElement("button", { style: { padding: "10px 24px", fontSize: 14, fontWeight: 600, fontFamily: fonts.sans, background: "transparent", color: "var(--color-accent)", border: "1px solid var(--color-accent)", borderRadius: 8, cursor: "pointer" } }, "Outline"),
-          React.createElement("button", { style: { padding: "10px 24px", fontSize: 14, fontWeight: 600, fontFamily: fonts.sans, background: "transparent", color: "var(--color-text-secondary)", border: "none", borderRadius: 8, cursor: "pointer", textDecoration: "underline" } }, "Ghost"),
+        pb ? React.createElement("p", { style: { fontSize: 12, color: "var(--color-text-tertiary)", marginBottom: 12, fontStyle: "italic" } }, "Styles captured from the reference site") : null,
+        React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 12, marginBottom: 32 } },
+          React.createElement("button", { style: primaryStyle }, "Primary"),
+          React.createElement("button", { style: secondaryStyle }, "Secondary"),
+          React.createElement("button", { style: Object.assign({}, secondaryStyle, { background: "transparent", border: "1px solid " + (pb ? pb.bg : "var(--color-accent)"), color: pb ? pb.bg : "var(--color-accent)" }) }, "Outline"),
+          React.createElement("button", { style: { padding: primaryStyle.padding, fontSize: primaryStyle.fontSize, fontWeight: primaryStyle.fontWeight, fontFamily: fonts.sans, background: "transparent", color: "var(--color-text-secondary)", border: "none", borderRadius: primaryStyle.borderRadius, cursor: "pointer", textDecoration: "underline" } }, "Ghost"),
         ),
         React.createElement(SubHeading, null, "Cards"),
         React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16, marginBottom: 32 } },
