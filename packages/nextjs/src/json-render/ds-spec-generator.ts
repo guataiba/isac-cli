@@ -899,46 +899,36 @@ export const { registry: dsRegistry } = defineRegistry(dsCatalog, {
       );
     },
     DSBackgrounds: ({ props }) => {
+      var allCards = [];
+      allCards.push({ label: "Page", bgStyle: { background: props.pageBackground }, meta: props.pageBackground, badges: [] });
+      props.sections.forEach(function(sec, i) {
+        var bgStyle = {};
+        var badges = [];
+        if (sec.bgGradient) { bgStyle.background = sec.bgGradient; badges.push("gradient"); }
+        else if (sec.bgColor) { bgStyle.background = sec.bgColor; }
+        if (sec.bgImage && !sec.bgGradient) { bgStyle.backgroundImage = sec.bgImage; bgStyle.backgroundSize = "cover"; bgStyle.backgroundPosition = "center"; badges.push("image"); }
+        if (sec.hasOverlay) badges.push("overlay");
+        allCards.push({ label: sec.label, bgStyle: bgStyle, meta: sec.bgColor || (sec.bgGradient ? "gradient" : ""), textColor: sec.textColor, badges: badges });
+      });
       return React.createElement(SectionWrapper, { title: props.title },
-        React.createElement(SubHeading, null, "Page Background"),
-        React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 16, marginBottom: 32, padding: 16, border: "1px solid var(--color-border-primary)", borderRadius: 8 } },
-          React.createElement("div", { style: { width: 64, height: 64, borderRadius: 8, background: props.pageBackground, border: "1px solid var(--color-border-primary)", flexShrink: 0 } }),
-          React.createElement("div", null,
-            React.createElement("div", { style: { fontSize: 14, fontWeight: 600, marginBottom: 4 } }, "Page Background"),
-            React.createElement("code", { style: { fontFamily: fonts.mono, fontSize: 12, color: "var(--color-text-secondary)" } }, props.pageBackground),
-          ),
-        ),
-        React.createElement(SubHeading, null, "Section Backgrounds"),
-        props.sections.length === 0
-          ? React.createElement("p", { style: { fontSize: 14, color: "var(--color-text-tertiary)", fontStyle: "italic" } }, "No distinct section backgrounds detected.")
-          : React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 16 } },
-              ...props.sections.map(function(sec: any, i: number) {
-                var bgStyle: any = {};
-                if (sec.bgGradient) bgStyle.background = sec.bgGradient;
-                else if (sec.bgColor) bgStyle.background = sec.bgColor;
-                if (sec.bgImage && !sec.bgGradient) { bgStyle.backgroundImage = sec.bgImage; bgStyle.backgroundSize = "cover"; bgStyle.backgroundPosition = "center"; }
-                return React.createElement("div", { key: sec.label + "-" + i, style: { border: "1px solid var(--color-border-primary)", borderRadius: 12, overflow: "hidden" } },
+        allCards.length === 0
+          ? React.createElement("p", { style: { fontSize: 14, color: "var(--color-text-tertiary)", fontStyle: "italic" } }, "No backgrounds detected.")
+          : React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 16 } },
+              ...allCards.map(function(card, i) {
+                return React.createElement("div", { key: "bg-" + i, style: { borderRadius: 12, overflow: "hidden", border: "1px solid var(--color-border-primary)", display: "flex", flexDirection: "column" } },
                   React.createElement("div", {
-                    style: Object.assign({ height: 80, display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }, bgStyle),
+                    style: Object.assign({ height: 140, display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }, card.bgStyle),
                   },
-                    React.createElement("span", { style: { fontSize: 16, fontWeight: 600, fontFamily: fonts.display, color: sec.textColor || "var(--color-text-primary)", position: "relative", zIndex: 1 } }, sec.label),
-                    sec.hasOverlay ? React.createElement("div", { style: { position: "absolute", top: 0, right: 8, fontSize: 10, color: "var(--color-text-tertiary)", padding: "4px 8px", background: "var(--color-bg-primary)", borderRadius: "0 0 4px 4px", opacity: 0.8 } }, "overlay") : null,
+                    React.createElement("span", { style: { fontSize: 14, fontWeight: 600, fontFamily: fonts.display, color: card.textColor || "var(--color-text-primary)", position: "relative", zIndex: 1, textShadow: "0 1px 3px rgba(0,0,0,0.3)" } }, card.label),
+                    card.badges.length > 0
+                      ? React.createElement("div", { style: { position: "absolute", top: 8, right: 8, display: "flex", gap: 4 } },
+                          ...card.badges.map(function(b, j) {
+                            return React.createElement("span", { key: "badge-" + j, style: { fontSize: 10, padding: "2px 6px", borderRadius: 4, background: "rgba(0,0,0,0.5)", color: "#fff", fontFamily: fonts.mono } }, b);
+                          })
+                        )
+                      : null,
                   ),
-                  React.createElement("div", { style: { padding: "12px 16px", display: "flex", flexWrap: "wrap", gap: 16, fontSize: 12 } },
-                    sec.bgColor ? React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
-                      React.createElement("div", { style: { width: 16, height: 16, borderRadius: 4, background: sec.bgColor, border: "1px solid var(--color-border-subtle)", flexShrink: 0 } }),
-                      React.createElement("code", { style: { fontFamily: fonts.mono, color: "var(--color-text-secondary)" } }, sec.bgColor),
-                    ) : null,
-                    sec.bgGradient ? React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
-                      React.createElement("div", { style: { width: 32, height: 16, borderRadius: 4, background: sec.bgGradient, border: "1px solid var(--color-border-subtle)", flexShrink: 0 } }),
-                      React.createElement("code", { style: { fontFamily: fonts.mono, color: "var(--color-text-secondary)" } }, "gradient"),
-                    ) : null,
-                    sec.textColor ? React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
-                      React.createElement("span", { style: { fontSize: 11, color: "var(--color-text-tertiary)" } }, "text:"),
-                      React.createElement("div", { style: { width: 16, height: 16, borderRadius: 4, background: sec.textColor, border: "1px solid var(--color-border-subtle)", flexShrink: 0 } }),
-                      React.createElement("code", { style: { fontFamily: fonts.mono, color: "var(--color-text-secondary)" } }, sec.textColor),
-                    ) : null,
-                  ),
+                  React.createElement("div", { style: { padding: "10px 12px", fontSize: 12, fontFamily: fonts.mono, color: "var(--color-text-secondary)", background: "var(--color-bg-secondary)", borderTop: "1px solid var(--color-border-subtle)" } }, card.meta),
                 );
               }),
             ),

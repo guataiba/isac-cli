@@ -144,8 +144,20 @@ agent-browser eval --stdin <<'JS'
   const body = getComputedStyle(document.body).fontFamily;
   const h1 = document.querySelector('h1, h2, [class*="heading"], [class*="title"]');
   const heading = h1 ? getComputedStyle(h1).fontFamily : body;
-  const code = document.querySelector('code, pre, [class*="mono"]');
-  const mono = code ? getComputedStyle(code).fontFamily : '"SF Mono", monospace';
+  const code = document.querySelector('code, pre, [class*="mono"], [class*="code"], kbd, samp, var, tt');
+  let mono = code ? getComputedStyle(code).fontFamily : null;
+  // If no mono element found, check if any loaded font has "mono" in its name
+  if (!mono) {
+    try {
+      for (const f of document.fonts) {
+        if (f.status === 'loaded' && /mono|code|consolas|courier/i.test(f.family)) {
+          mono = f.family + ', monospace';
+          break;
+        }
+      }
+    } catch(e) {}
+  }
+  if (!mono) mono = '"SF Mono", monospace';
   return JSON.stringify({ body, heading, mono });
 })()
 JS

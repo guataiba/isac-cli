@@ -32,6 +32,7 @@ interface ColorData {
     body: string | null;
     muted: string | null;
     link: string | null;
+    hierarchy?: string[];
   };
   accents: {
     primary: string | null;
@@ -44,6 +45,10 @@ interface ColorData {
     input: string | null;
   };
   _cssVars?: Record<string, string>;
+  shapes?: {
+    radii?: Array<{ value: string; count: number }>;
+    shadows?: Array<{ value: string; count: number; source: string }>;
+  };
 }
 
 // ── Gray scale steps ────────────────────────────────────────────────
@@ -170,7 +175,8 @@ function isValidHex(value: string | null | undefined): value is string {
 function isColorDataSane(colorData: ColorData): boolean {
   // 1. Must have at least 2 non-null text colors.
   //    If most text values are null, the extractor hit a wall or empty page.
-  const textValues = Object.values(colorData.text);
+  const { hierarchy: _h1, ...textOnly } = colorData.text;
+  const textValues = Object.values(textOnly);
   const nonNullText = textValues.filter(v => isValidHex(v)).length;
   if (nonNullText < 2) return false;
 
@@ -179,7 +185,7 @@ function isColorDataSane(colorData: ColorData): boolean {
   for (const val of Object.values(colorData.backgrounds)) {
     if (isValidHex(val)) allColors.add(val.toLowerCase());
   }
-  for (const val of Object.values(colorData.text)) {
+  for (const val of Object.values(textOnly)) {
     if (isValidHex(val)) allColors.add(val.toLowerCase());
   }
   for (const val of Object.values(colorData.accents)) {
@@ -326,15 +332,35 @@ function buildFontFaces(fontData: FontData, cwd: string): string {
   return rules.join("\n\n");
 }
 
-function buildFontVars(roles: FontData["roles"]): {
+const MONO_FALLBACK = '"SF Mono", "Fira Code", ui-monospace, monospace';
+
+/** Known mono font family names (case-insensitive match) */
+const MONO_KEYWORDS = ["mono", "code", "consolas", "courier", "fira code", "jetbrains", "geist"];
+
+function buildFontVars(roles: FontData["roles"], fontFaces?: FontFace[]): {
   fontSans: string;
   fontDisplay: string;
   fontMono: string;
 } {
+  let mono = roles?.mono;
+
+  // If roles.mono is the generic fallback (no <code> found on page),
+  // try to find a mono font from the extracted font-faces
+  if (!mono || mono === '"SF Mono", monospace' || mono === "monospace") {
+    const monoFace = fontFaces?.find(f =>
+      MONO_KEYWORDS.some(kw => f.family.toLowerCase().includes(kw)),
+    );
+    if (monoFace) {
+      mono = `"${monoFace.family}", ${MONO_FALLBACK}`;
+    } else {
+      mono = MONO_FALLBACK;
+    }
+  }
+
   return {
     fontSans: roles?.body ?? "system-ui, -apple-system, sans-serif",
     fontDisplay: roles?.heading ?? roles?.body ?? "system-ui, sans-serif",
-    fontMono: roles?.mono ?? '"SF Mono", "Fira Code", ui-monospace, monospace',
+    fontMono: mono,
   };
 }
 
@@ -553,8 +579,8 @@ function buildSemanticTokens(colorData: ColorData, primitives: PrimitiveScale, i
     lines.push("  /* Text */");
     lines.push(`  --color-text-primary: ${matchToGrayVar(colorData.text.heading, grays, 50)};`);
     // Use extras for text-secondary/tertiary if available (preserves exact site colors)
-    lines.push(`  --color-text-secondary: ${extras.has("text-muted") ? `var(--sf-${sanitizeVarName("text-muted")})` : matchToGrayVar(colorData.text.muted, grays, 400)};`);
-    lines.push(`  --color-text-tertiary: ${extras.has("text-body") ? `var(--sf-${sanitizeVarName("text-body")})` : matchToGrayVar(colorData.text.body, grays, 500)};`);
+    lines.push(`  --color-text-secondary: ${extras.has("text-body") ? `var(--sf-${sanitizeVarName("text-body")})` : matchToGrayVar(colorData.text.body, grays, 300)};`);
+    lines.push(`  --color-text-tertiary: ${extras.has("text-muted") ? `var(--sf-${sanitizeVarName("text-muted")})` : matchToGrayVar(colorData.text.muted, grays, 400)};`);
     lines.push("  --color-text-inverse: var(--sf-gray-950);");
 
     lines.push("");
@@ -769,7 +795,8 @@ function hasAnyColor(data: ColorData): boolean {
   for (const val of Object.values(data.backgrounds)) {
     if (isValidHex(val)) return true;
   }
-  for (const val of Object.values(data.text)) {
+  const { hierarchy: _h, ...txtOnly } = data.text;
+  for (const val of Object.values(txtOnly)) {
     if (isValidHex(val)) return true;
   }
   return false;
@@ -796,6 +823,7 @@ function assembleCss(
   themeOverrides: string,
   themeBridge: string,
   isDarkFirst: boolean,
+  shapes?: ColorData["shapes"],
 ): string {
   const lines: string[] = [];
 
@@ -832,6 +860,37 @@ function assembleCss(
   lines.push(`  --font-sans: ${fontVars.fontSans};`);
   lines.push(`  --font-display: ${fontVars.fontDisplay};`);
   lines.push(`  --font-mono: ${fontVars.fontMono};`);
+
+  // Shape tokens (shadows & radii from extraction)
+  if (shapes?.shadows && shapes.shadows.length > 0) {
+    lines.push("");
+    lines.push("  /* ─── Shadows ─── */");
+    const labels = ["sm", "md", "lg", "xl"];
+    for (let i = 0; i < Math.min(shapes.shadows.length, 4); i++) {
+      lines.push(`  --shadow-${labels[i]}: ${shapes.shadows[i].value};`);
+    }
+  }
+  if (shapes?.radii && shapes.radii.length > 0) {
+    lines.push("");
+    lines.push("  /* ─── Border radii ─── */");
+    // Sort by parsed px value ascending, deduplicate
+    const sortedRadii = [...shapes.radii]
+      .map(r => ({ ...r, px: parseInt(r.value, 10) || 0 }))
+      .filter(r => r.px > 0 && r.px < 100)
+      .sort((a, b) => a.px - b.px);
+    // Deduplicate close values (within 1px)
+    const deduped: typeof sortedRadii = [];
+    for (const r of sortedRadii) {
+      if (deduped.length === 0 || r.px - deduped[deduped.length - 1].px > 1) {
+        deduped.push(r);
+      }
+    }
+    const rLabels = ["sm", "md", "lg", "xl", "2xl"];
+    for (let i = 0; i < Math.min(deduped.length, 5); i++) {
+      lines.push(`  --radius-${rLabels[i]}: ${deduped[i].value};`);
+    }
+    lines.push("  --radius-pill: 9999px;");
+  }
 
   lines.push("");
   lines.push(`  /* ─── Semantic tokens (${isDarkFirst ? "dark" : "light"} = default) ─── */`);
@@ -934,7 +993,7 @@ export function generateGlobalsCss(cwd: string, _mode: PipelineMode): string {
   const fontFaceRules = buildFontFaces(fontData, cwd);
 
   // 6. Font variables
-  const fontVars = buildFontVars(fontData.roles);
+  const fontVars = buildFontVars(fontData.roles, fontData.fontFaces);
 
   // 7. Primitive scale
   const primitives = buildPrimitiveScale(mergedColors);
@@ -963,7 +1022,7 @@ export function generateGlobalsCss(cwd: string, _mode: PipelineMode): string {
   const themeBridge = buildThemeBridge(fontVars);
 
   // 11. Assemble
-  return assembleCss(fontFaceRules, fontVars, primitives, semantics, themeOverrides, themeBridge, darkFirst);
+  return assembleCss(fontFaceRules, fontVars, primitives, semantics, themeOverrides, themeBridge, darkFirst, colorData.shapes);
 }
 
 /** Resolve accent primary: use extracted value, fall back to CSS vars, then default */
@@ -982,7 +1041,7 @@ function resolveAccentPrimary(data: ColorData): string {
 /** Dark-themed defaults for dark-first sites */
 const DEFAULT_DARK_COLORS: ColorData = {
   backgrounds: { page: "#0a0a0a", header: "#111111", card: "#1a1a1a", footer: "#0a0a0a" },
-  text: { heading: "#ffffff", body: "#ffffff", muted: "#9c9c9d", link: "#2563eb" },
+  text: { heading: "#ffffff", body: "#e0e0e0", muted: "#9c9c9d", link: "#2563eb" },
   accents: { primary: "#2563eb", primaryText: "#ffffff" },
   borders: { default: "#2a2a2a" },
   surfaces: { input: "#1a1a1a" },
@@ -995,7 +1054,6 @@ function mergeColorDefaults(data: ColorData, darkFirst = false): ColorData {
 
   // --- Text fields with contrast awareness ---
   let heading = data.text.heading ?? defaults.text.heading;
-  // If heading has no contrast against page bg, use defaults
   if (isValidHex(heading) && isValidHex(pageBg) && contrastRatio(heading, pageBg) < 2.0) {
     heading = defaults.text.heading;
   }
@@ -1010,8 +1068,36 @@ function mergeColorDefaults(data: ColorData, darkFirst = false): ColorData {
     link = defaults.text.link;
   }
 
-  // Muted: if null, use defaults
-  const muted = data.text.muted ?? defaults.text.muted;
+  let muted = data.text.muted ?? defaults.text.muted;
+
+  // --- Use text hierarchy from frequency analysis when available ---
+  // The hierarchy array is sorted by luminance (lightest first on dark sites).
+  // It captures the real distinct text tiers from the page.
+  const hierarchy = data.text.hierarchy;
+  if (hierarchy && hierarchy.length >= 2) {
+    // hierarchy[0] = brightest text (primary/heading)
+    // hierarchy[1] = second tier (secondary)
+    // hierarchy[2] = third tier (tertiary/muted)
+    if (hierarchy.length >= 3) {
+      body = hierarchy[1];
+      muted = hierarchy[2];
+    } else {
+      // Only 2 tiers: use second as muted
+      muted = hierarchy[1];
+    }
+  } else {
+    // No hierarchy data — use collapse recovery heuristics
+    if (darkFirst && isValidHex(body) && isValidHex(heading) && body.toLowerCase() === heading.toLowerCase()) {
+      body = defaults.text.body;
+    }
+    if (isValidHex(muted) && isValidHex(heading) && muted.toLowerCase() === heading.toLowerCase()) {
+      if (isValidHex(link) && link.toLowerCase() !== heading.toLowerCase() && isValidHex(pageBg) && contrastRatio(link, pageBg) >= 2.0) {
+        muted = link;
+      } else {
+        muted = defaults.text.muted;
+      }
+    }
+  }
 
   // --- Background fields with luminance divergence checks ---
   const pageLum = luminance(pageBg);

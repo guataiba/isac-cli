@@ -201,6 +201,43 @@ export const COLOR_EXTRACTION_SCRIPT = () => {
     if (hex !== primaryBg && hex !== "#ffffff" && hex !== "#000000") { btnSecondary = el; break; }
   }
 
+  // ── Text hierarchy via frequency analysis ──
+  // Scan all visible text elements and group by color to find the real hierarchy
+  const textColorFreq = new Map<string, number>();
+  const textEls = document.querySelectorAll("h1, h2, h3, h4, h5, h6, p, span, a, li, label, small, figcaption, blockquote, td, th, dt, dd");
+  for (const el of textEls) {
+    if (!isVisible(el)) continue;
+    const text = (el as HTMLElement).innerText?.trim();
+    if (!text || text.length < 3) continue;
+    const c = rgbToHex(getComputedStyle(el).color);
+    if (!c || c === pageBg) continue;
+    // Only count neutral/gray-ish text (low saturation) to avoid accent colors
+    if (sat(c) > 0.3) continue;
+    textColorFreq.set(c, (textColorFreq.get(c) || 0) + 1);
+  }
+  // Sort by frequency, then group similar colors (within 10 luminance distance)
+  const sortedTextColors = [...textColorFreq.entries()]
+    .filter(([c]) => Math.abs(lum(c) - pageLum) > 0.05) // must have some contrast
+    .sort((a, b) => b[1] - a[1]);
+
+  // Deduplicate: merge colors within 0.03 luminance distance
+  const distinctTextColors: Array<{ hex: string; count: number; lum: number }> = [];
+  for (const [hex, count] of sortedTextColors) {
+    const l = lum(hex);
+    const existing = distinctTextColors.find(d => Math.abs(d.lum - l) < 0.03);
+    if (existing) {
+      existing.count += count;
+      // Keep the one with higher frequency
+    } else {
+      distinctTextColors.push({ hex, count, lum: l });
+    }
+  }
+  // Sort by luminance descending (lightest first for dark sites, or by contrast)
+  distinctTextColors.sort((a, b) => b.lum - a.lum);
+
+  // Build hierarchy: up to 4 tiers from the distinct text colors
+  const textHierarchy = distinctTextColors.slice(0, 4).map(d => d.hex);
+
   const result: Record<string, unknown> = {
     backgrounds: {
       page: pageBg,
@@ -229,6 +266,7 @@ export const COLOR_EXTRACTION_SCRIPT = () => {
         return null;
       })(),
       link: getColor(a, "color"),
+      hierarchy: textHierarchy,
     },
     accents: {
       primary: getColor(btn, "backgroundColor") || getColor(a, "color"),
@@ -244,6 +282,82 @@ export const COLOR_EXTRACTION_SCRIPT = () => {
       primary: getButtonStyles(btn),
       secondary: getButtonStyles(btnSecondary),
     },
+    typography: (() => {
+      // Extract real font sizes and weights from headings and body
+      const scale: Record<string, { fontSize: string; fontWeight: string; lineHeight: string; letterSpacing: string | null }> = {};
+      const tags = ["h1", "h2", "h3", "h4", "p"] as const;
+      for (const tag of tags) {
+        const el = document.querySelector(tag);
+        if (el && isVisible(el)) {
+          const s = getComputedStyle(el);
+          scale[tag] = {
+            fontSize: s.fontSize,
+            fontWeight: s.fontWeight,
+            lineHeight: s.lineHeight,
+            letterSpacing: s.letterSpacing !== "normal" ? s.letterSpacing : null,
+          };
+        }
+      }
+      // Also get the most common paragraph font-size
+      const pSizes = new Map<string, number>();
+      for (const p of document.querySelectorAll("p")) {
+        if (!isVisible(p)) continue;
+        const fs = getComputedStyle(p).fontSize;
+        pSizes.set(fs, (pSizes.get(fs) || 0) + 1);
+      }
+      let bodyFontSize: string | null = null;
+      let maxCount = 0;
+      for (const [size, count] of pSizes) {
+        if (count > maxCount) { maxCount = count; bodyFontSize = size; }
+      }
+      return { scale, bodyFontSize };
+    })(),
+    shapes: (() => {
+      // Extract real border-radii and shadows from interactive/container elements
+      const radiusMap = new Map<string, number>();
+      const shadowMap = new Map<string, { count: number; source: string }>();
+
+      const shapeEls = document.querySelectorAll(
+        'button, a[class], [class*="card"], [class*="Card"], input, textarea, ' +
+        '[class*="btn"], [class*="Button"], [role="button"], [class*="modal"], ' +
+        '[class*="dialog"], [class*="dropdown"], [class*="menu"], [class*="panel"], ' +
+        'section > div, article',
+      );
+
+      for (const el of shapeEls) {
+        if (!isVisible(el)) continue;
+        const s = getComputedStyle(el);
+        // Border radius
+        const r = s.borderRadius;
+        if (r && r !== "0px" && !r.includes("%")) {
+          radiusMap.set(r, (radiusMap.get(r) || 0) + 1);
+        }
+        // Box shadow
+        const sh = s.boxShadow;
+        if (sh && sh !== "none") {
+          const tag = el.tagName.toLowerCase();
+          const cls = (el.className && typeof el.className === "string") ? el.className.split(" ")[0] : "";
+          if (!shadowMap.has(sh)) {
+            shadowMap.set(sh, { count: 0, source: tag + (cls ? "." + cls : "") });
+          }
+          shadowMap.get(sh)!.count++;
+        }
+      }
+
+      // Sort radii by frequency, take top values
+      const topRadii = [...radiusMap.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 6)
+        .map(([value, count]) => ({ value, count }));
+
+      // Sort shadows by frequency, take top 4 distinct ones
+      const topShadows = [...shadowMap.entries()]
+        .sort((a, b) => b[1].count - a[1].count)
+        .slice(0, 4)
+        .map(([value, info]) => ({ value, count: info.count, source: info.source }));
+
+      return { radii: topRadii, shadows: topShadows };
+    })(),
   };
   if (Object.keys(cssVars).length > 0) result._cssVars = cssVars;
   return result;
