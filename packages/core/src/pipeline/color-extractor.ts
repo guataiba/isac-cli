@@ -211,7 +211,23 @@ export const COLOR_EXTRACTION_SCRIPT = () => {
     text: {
       heading: getColor(heading, "color"),
       body: getColor(pEl, "color") || getColor(body, "color"),
-      muted: getColor(qVisible("[class*=\"muted\"], [class*=\"secondary\"], small, .text-gray"), "color"),
+      muted: (() => {
+        // Try explicit muted selectors first
+        const explicit = qVisible("[class*=\"muted\"], [class*=\"secondary\"], small, .text-gray, [class*=\"subtitle\"], [class*=\"description\"]");
+        if (explicit) return getColor(explicit, "color");
+        // Fallback: find text with intermediate contrast (between heading and background)
+        // These are nav links, captions, timestamps — the "secondary" text tier
+        const candidates = document.querySelectorAll("nav a, nav span, [class*=\"nav\"] a, time, figcaption, small, footer a, footer span");
+        for (const el of candidates) {
+          if (!isVisible(el)) continue;
+          const c = rgbToHex(getComputedStyle(el).color);
+          if (!c) continue;
+          const cLum = lum(c);
+          // Must be between heading and page bg luminance (not too bright, not invisible)
+          if (Math.abs(cLum - pageLum) > 0.1 && Math.abs(cLum - pageLum) < 0.7) return c;
+        }
+        return null;
+      })(),
       link: getColor(a, "color"),
     },
     accents: {

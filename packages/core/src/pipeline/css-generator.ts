@@ -161,28 +161,20 @@ function isValidHex(value: string | null | undefined): value is string {
 // ── Sanity checks ───────────────────────────────────────────────────
 
 /**
- * Check if extracted color data is minimally usable for a light theme.
- * Returns false when Phase 0 produced garbage (e.g. consent screen, dark-only site).
+ * Check if extracted color data is minimally usable.
+ * Returns false when Phase 0 produced garbage (e.g. consent screen, empty page).
  *
- * Note: individual field issues (white-on-white heading, bad card color) are handled
- * by mergeColorDefaults(). This function detects *structural* problems where the
- * entire extraction is unusable.
+ * Note: dark sites are NOT considered garbage — they are handled by isDarkFirstSite().
+ * This function only detects *structural* problems where the extraction is empty/broken.
  */
 function isColorDataSane(colorData: ColorData): boolean {
-  const bg = colorData.backgrounds.page;
-
-  // 1. Page background must exist and be "light" (luminance > 0.3).
-  //    A dark page bg in the "light" extraction means the site loaded in dark mode
-  //    or hit a consent/login wall (e.g. YouTube → #000000).
-  if (isValidHex(bg) && luminance(bg) < 0.3) return false;
-
-  // 2. Must have at least 2 non-null text colors.
+  // 1. Must have at least 2 non-null text colors.
   //    If most text values are null, the extractor hit a wall or empty page.
   const textValues = Object.values(colorData.text);
   const nonNullText = textValues.filter(v => isValidHex(v)).length;
   if (nonNullText < 2) return false;
 
-  // 3. At least 3 distinct colors total — a real site has visual variety.
+  // 2. At least 3 distinct colors total — a real site has visual variety.
   const allColors = new Set<string>();
   for (const val of Object.values(colorData.backgrounds)) {
     if (isValidHex(val)) allColors.add(val.toLowerCase());
@@ -196,6 +188,38 @@ function isColorDataSane(colorData: ColorData): boolean {
   if (allColors.size < 3) return false;
 
   return true;
+}
+
+/**
+ * Detect if the site is dark-first (dark background, light text).
+ * Dark-first sites should use their dark palette as the primary :root theme
+ * instead of fabricating a light mode that doesn't exist.
+ */
+function isDarkFirstSite(colorData: ColorData, darkData: ColorData | null): boolean {
+  const bg = colorData.backgrounds.page;
+  if (!isValidHex(bg)) return false;
+
+  const bgLum = luminance(bg);
+
+  // If page bg is dark (luminance < 0.15) and there is NO separate dark extraction
+  // (meaning the site doesn't have a toggle — it IS dark), it's dark-first.
+  if (bgLum < 0.15) {
+    // If we have a separate dark extraction that is significantly different,
+    // the site has both modes — not dark-first, just happened to load in dark.
+    if (darkData && hasAnyColor(darkData)) {
+      const darkBg = darkData.backgrounds.page;
+      if (isValidHex(darkBg)) {
+        const darkBgLum = luminance(darkBg);
+        // Both extractions are dark → dark-first (no real light mode)
+        if (darkBgLum < 0.15) return true;
+        // Light extraction is dark but dark extraction is light → both exist, not dark-first
+        return false;
+      }
+    }
+    return true;
+  }
+
+  return false;
 }
 
 // ── Interpolation ───────────────────────────────────────────────────
@@ -321,6 +345,8 @@ interface PrimitiveScale {
   white: string;
   black: string;
   link: string | null;
+  /** Extra named colors that don't fit the gray scale (e.g. exact text colors) */
+  extras: Map<string, string>;
 }
 
 /** CSS var names that commonly hold a site's primary/accent color */
@@ -344,12 +370,15 @@ function resolveCssVarAccent(cssVars?: Record<string, string>): string | null {
 
 function buildPrimitiveScale(colorData: ColorData): PrimitiveScale {
   // Determine lightest and darkest colors from the palette
-  const lightest = isValidHex(colorData.backgrounds.page)
-    ? colorData.backgrounds.page
-    : "#ffffff";
-  const darkest = isValidHex(colorData.text.heading)
-    ? colorData.text.heading
-    : "#111827";
+  const allBgs = Object.values(colorData.backgrounds).filter(isValidHex);
+  const allTexts = [colorData.text.heading, colorData.text.body].filter(isValidHex);
+
+  // Sort by luminance to find actual lightest/darkest
+  const allNeutrals = [...allBgs, ...allTexts];
+  allNeutrals.sort((a, b) => luminance(b) - luminance(a));
+
+  const lightest = allNeutrals.length > 0 ? allNeutrals[0] : "#ffffff";
+  const darkest = allNeutrals.length > 0 ? allNeutrals[allNeutrals.length - 1] : "#111827";
 
   // Sanity check: if lightest ≈ darkest, use Tailwind default gray scale
   const lumDiff = Math.abs(luminance(lightest) - luminance(darkest));
@@ -361,6 +390,7 @@ function buildPrimitiveScale(colorData: ColorData): PrimitiveScale {
       white: "#ffffff",
       black: "#000000",
       link: isValidHex(colorData.text.link) ? colorData.text.link : null,
+      extras: new Map(),
     };
   }
 
@@ -385,8 +415,8 @@ function buildPrimitiveScale(colorData: ColorData): PrimitiveScale {
   // for better fidelity to the original design
   const intermediates: Array<{ hex: string; lum: number }> = [];
   for (const hex of neutralSamples) {
-    const lum = luminance(hex);
-    intermediates.push({ hex, lum });
+    const l = luminance(hex);
+    intermediates.push({ hex, lum: l });
   }
   intermediates.sort((a, b) => b.lum - a.lum); // lightest first
 
@@ -398,6 +428,26 @@ function buildPrimitiveScale(colorData: ColorData): PrimitiveScale {
       if (step <= 200 && snapLum <= 0.5) continue;  // too dark for a light step
       if (step >= 800 && snapLum >= 0.3) continue;   // too light for a dark step
       grays.set(step, hex);
+    }
+  }
+
+  // Build extras: text colors that don't map well to the gray scale
+  // (distance > 0.05 luminance from the nearest gray step)
+  const extras = new Map<string, string>();
+  const textColors: Array<{ name: string; hex: string | null }> = [
+    { name: "text-muted", hex: colorData.text.muted },
+    { name: "text-body", hex: colorData.text.body },
+    { name: "text-link", hex: colorData.text.link },
+  ];
+  for (const { name, hex } of textColors) {
+    if (!isValidHex(hex)) continue;
+    const step = closestGrayStep(hex, grays);
+    if (step === null) continue;
+    const grayHex = grays.get(step)!;
+    const dist = Math.abs(luminance(hex) - luminance(grayHex));
+    // If the color is far from the nearest gray, preserve it as an extra primitive
+    if (dist > 0.04) {
+      extras.set(name, hex);
     }
   }
 
@@ -419,6 +469,7 @@ function buildPrimitiveScale(colorData: ColorData): PrimitiveScale {
     white: "#ffffff",
     black: "#000000",
     link,
+    extras,
   };
 }
 
@@ -483,45 +534,81 @@ function matchToGrayVar(hex: string | null, scale: Map<number, string>, fallback
   return `var(--sf-gray-${step ?? fallbackStep})`;
 }
 
-function buildSemanticTokens(colorData: ColorData, primitives: PrimitiveScale): string {
-  const { grays } = primitives;
+function buildSemanticTokens(colorData: ColorData, primitives: PrimitiveScale, isDarkFirst: boolean): string {
+  const { grays, extras } = primitives;
   const lines: string[] = [];
 
-  lines.push("  /* Backgrounds */");
-  lines.push(`  --color-bg-primary: ${matchToGrayVar(colorData.backgrounds.page, grays, 50)};`);
-  lines.push(`  --color-bg-secondary: ${matchToGrayVar(colorData.backgrounds.header, grays, 50)};`);
-  lines.push(`  --color-bg-tertiary: ${matchToGrayVar(colorData.backgrounds.card, grays, 100)};`);
+  if (isDarkFirst) {
+    // Dark-first: :root is the dark theme
+    lines.push("  /* Backgrounds */");
+    lines.push(`  --color-bg-primary: ${matchToGrayVar(colorData.backgrounds.page, grays, 950)};`);
+    lines.push(`  --color-bg-secondary: ${matchToGrayVar(colorData.backgrounds.header, grays, 900)};`);
+    lines.push(`  --color-bg-tertiary: ${matchToGrayVar(colorData.backgrounds.card, grays, 800)};`);
 
-  // Glass: use the page background with opacity
-  const pageBg = isValidHex(colorData.backgrounds.page) ? colorData.backgrounds.page : "#ffffff";
-  const [pr, pg, pb] = hexToRgb(pageBg);
-  lines.push(`  --color-bg-glass: rgba(${pr}, ${pg}, ${pb}, 0.8);`);
+    const pageBg = isValidHex(colorData.backgrounds.page) ? colorData.backgrounds.page : "#0a0a0a";
+    const [pr, pg, pb] = hexToRgb(pageBg);
+    lines.push(`  --color-bg-glass: rgba(${pr}, ${pg}, ${pb}, 0.8);`);
 
-  lines.push("");
-  lines.push("  /* Text */");
-  lines.push(`  --color-text-primary: ${matchToGrayVar(colorData.text.heading, grays, 900)};`);
-  lines.push(`  --color-text-secondary: ${matchToGrayVar(colorData.text.muted, grays, 500)};`);
-  lines.push(`  --color-text-tertiary: ${matchToGrayVar(colorData.text.body, grays, 400)};`);
-  lines.push("  --color-text-inverse: var(--sf-white);");
+    lines.push("");
+    lines.push("  /* Text */");
+    lines.push(`  --color-text-primary: ${matchToGrayVar(colorData.text.heading, grays, 50)};`);
+    // Use extras for text-secondary/tertiary if available (preserves exact site colors)
+    lines.push(`  --color-text-secondary: ${extras.has("text-muted") ? `var(--sf-${sanitizeVarName("text-muted")})` : matchToGrayVar(colorData.text.muted, grays, 400)};`);
+    lines.push(`  --color-text-tertiary: ${extras.has("text-body") ? `var(--sf-${sanitizeVarName("text-body")})` : matchToGrayVar(colorData.text.body, grays, 500)};`);
+    lines.push("  --color-text-inverse: var(--sf-gray-950);");
 
-  lines.push("");
-  lines.push("  /* Borders */");
-  lines.push(`  --color-border-primary: ${matchToGrayVar(colorData.borders.default, grays, 200)};`);
-  // secondary = one step darker than primary
-  const borderStep = closestGrayStep(
-    isValidHex(colorData.borders.default) ? colorData.borders.default : "#e5e7eb",
-    grays,
-  ) ?? 200;
-  const borderSecondaryStep = Math.min(borderStep + 100, 950);
-  lines.push(`  --color-border-secondary: var(--sf-gray-${borderSecondaryStep});`);
-  // subtle = one step lighter than primary
-  const borderSubtleStep = Math.max(borderStep - 100, 50);
-  lines.push(`  --color-border-subtle: var(--sf-gray-${borderSubtleStep});`);
+    lines.push("");
+    lines.push("  /* Borders */");
+    // Dark-first: borders should be subtle dark tones, not bright
+    const borderHex = isValidHex(colorData.borders.default) ? colorData.borders.default : null;
+    if (borderHex && luminance(borderHex) > 0.5) {
+      // Extracted border is bright (e.g. #ffffff) — use dark gray instead
+      lines.push("  --color-border-primary: var(--sf-gray-800);");
+    } else {
+      lines.push(`  --color-border-primary: ${matchToGrayVar(borderHex, grays, 800)};`);
+    }
+    lines.push("  --color-border-secondary: var(--sf-gray-700);");
+    lines.push("  --color-border-subtle: var(--sf-gray-800);");
 
-  lines.push("");
-  lines.push("  /* Surfaces */");
-  lines.push("  --color-surface-elevated: var(--sf-white);");
-  lines.push(`  --color-surface-sunken: ${matchToGrayVar(colorData.backgrounds.footer ?? colorData.backgrounds.header, grays, 50)};`);
+    lines.push("");
+    lines.push("  /* Surfaces */");
+    lines.push("  --color-surface-elevated: var(--sf-gray-900);");
+    lines.push("  --color-surface-sunken: var(--sf-gray-950);");
+  } else {
+    // Light-first: original behavior
+    lines.push("  /* Backgrounds */");
+    lines.push(`  --color-bg-primary: ${matchToGrayVar(colorData.backgrounds.page, grays, 50)};`);
+    lines.push(`  --color-bg-secondary: ${matchToGrayVar(colorData.backgrounds.header, grays, 50)};`);
+    lines.push(`  --color-bg-tertiary: ${matchToGrayVar(colorData.backgrounds.card, grays, 100)};`);
+
+    const pageBg = isValidHex(colorData.backgrounds.page) ? colorData.backgrounds.page : "#ffffff";
+    const [pr, pg, pb] = hexToRgb(pageBg);
+    lines.push(`  --color-bg-glass: rgba(${pr}, ${pg}, ${pb}, 0.8);`);
+
+    lines.push("");
+    lines.push("  /* Text */");
+    lines.push(`  --color-text-primary: ${matchToGrayVar(colorData.text.heading, grays, 900)};`);
+    lines.push(`  --color-text-secondary: ${extras.has("text-muted") ? `var(--sf-${sanitizeVarName("text-muted")})` : matchToGrayVar(colorData.text.muted, grays, 500)};`);
+    lines.push(`  --color-text-tertiary: ${extras.has("text-body") ? `var(--sf-${sanitizeVarName("text-body")})` : matchToGrayVar(colorData.text.body, grays, 400)};`);
+    lines.push("  --color-text-inverse: var(--sf-white);");
+
+    lines.push("");
+    lines.push("  /* Borders */");
+    lines.push(`  --color-border-primary: ${matchToGrayVar(colorData.borders.default, grays, 200)};`);
+    const borderStep = closestGrayStep(
+      isValidHex(colorData.borders.default) ? colorData.borders.default : "#e5e7eb",
+      grays,
+    ) ?? 200;
+    const borderSecondaryStep = Math.min(borderStep + 100, 950);
+    lines.push(`  --color-border-secondary: var(--sf-gray-${borderSecondaryStep});`);
+    const borderSubtleStep = Math.max(borderStep - 100, 50);
+    lines.push(`  --color-border-subtle: var(--sf-gray-${borderSubtleStep});`);
+
+    lines.push("");
+    lines.push("  /* Surfaces */");
+    lines.push("  --color-surface-elevated: var(--sf-white);");
+    lines.push(`  --color-surface-sunken: ${matchToGrayVar(colorData.backgrounds.footer ?? colorData.backgrounds.header, grays, 50)};`);
+  }
 
   lines.push("");
   lines.push("  /* Accent */");
@@ -531,6 +618,11 @@ function buildSemanticTokens(colorData: ColorData, primitives: PrimitiveScale): 
   }
 
   return lines.join("\n");
+}
+
+/** Sanitize extra var names for CSS custom property use */
+function sanitizeVarName(name: string): string {
+  return name.replace(/[^a-zA-Z0-9-]/g, "-");
 }
 
 function buildDarkOverrides(
@@ -629,6 +721,50 @@ function buildDarkOverrides(
   return lines.join("\n");
 }
 
+/** Build light mode overrides for dark-first sites */
+function buildLightOverrides(primitives: PrimitiveScale): string {
+  const lines: string[] = [];
+
+  // Invert the dark palette: swap dark → light by reversing the gray scale
+  lines.push("  /* Backgrounds */");
+  lines.push("  --color-bg-primary: var(--sf-gray-50);");
+  lines.push("  --color-bg-secondary: var(--sf-white);");
+  lines.push("  --color-bg-tertiary: var(--sf-gray-100);");
+  lines.push("  --color-bg-glass: rgba(255, 255, 255, 0.8);");
+
+  lines.push("");
+  lines.push("  /* Text */");
+  lines.push("  --color-text-primary: var(--sf-gray-950);");
+  lines.push("  --color-text-secondary: var(--sf-gray-600);");
+  lines.push("  --color-text-tertiary: var(--sf-gray-500);");
+  lines.push("  --color-text-inverse: var(--sf-white);");
+
+  lines.push("");
+  lines.push("  /* Borders */");
+  lines.push("  --color-border-primary: var(--sf-gray-200);");
+  lines.push("  --color-border-secondary: var(--sf-gray-300);");
+  lines.push("  --color-border-subtle: var(--sf-gray-100);");
+
+  lines.push("");
+  lines.push("  /* Surfaces */");
+  lines.push("  --color-surface-elevated: var(--sf-white);");
+  lines.push("  --color-surface-sunken: var(--sf-gray-50);");
+
+  lines.push("");
+  lines.push("  /* Accent */");
+  lines.push("  --color-accent: var(--sf-accent);");
+  if (primitives.link) {
+    lines.push("  --color-text-link: var(--sf-link);");
+  }
+
+  lines.push("");
+  lines.push("  /* Tailwind bridge */");
+  lines.push("  --background: var(--color-bg-primary);");
+  lines.push("  --foreground: var(--color-text-primary);");
+
+  return lines.join("\n");
+}
+
 function hasAnyColor(data: ColorData): boolean {
   for (const val of Object.values(data.backgrounds)) {
     if (isValidHex(val)) return true;
@@ -657,8 +793,9 @@ function assembleCss(
   fontVars: { fontSans: string; fontDisplay: string; fontMono: string },
   primitives: PrimitiveScale,
   semantics: string,
-  darkOverrides: string,
+  themeOverrides: string,
   themeBridge: string,
+  isDarkFirst: boolean,
 ): string {
   const lines: string[] = [];
 
@@ -685,6 +822,10 @@ function assembleCss(
   if (primitives.link) {
     lines.push(`  --sf-link: ${primitives.link};`);
   }
+  // Extra primitives (exact text colors that don't fit gray scale)
+  for (const [name, hex] of primitives.extras) {
+    lines.push(`  --sf-${sanitizeVarName(name)}: ${hex};`);
+  }
 
   lines.push("");
   lines.push("  /* ─── Font families ─── */");
@@ -693,7 +834,7 @@ function assembleCss(
   lines.push(`  --font-mono: ${fontVars.fontMono};`);
 
   lines.push("");
-  lines.push("  /* ─── Semantic tokens (light = default) ─── */");
+  lines.push(`  /* ─── Semantic tokens (${isDarkFirst ? "dark" : "light"} = default) ─── */`);
   lines.push(semantics);
 
   lines.push("");
@@ -707,10 +848,15 @@ function assembleCss(
   lines.push(themeBridge);
   lines.push("");
 
-  // 5. Dark mode
-  lines.push('/* ─── Dark theme (via data-theme attribute) ─── */');
-  lines.push('[data-theme="dark"] {');
-  lines.push(darkOverrides);
+  // 5. Alternate theme
+  if (isDarkFirst) {
+    lines.push('/* ─── Light theme (via data-theme attribute) ─── */');
+    lines.push('[data-theme="light"] {');
+  } else {
+    lines.push('/* ─── Dark theme (via data-theme attribute) ─── */');
+    lines.push('[data-theme="dark"] {');
+  }
+  lines.push(themeOverrides);
   lines.push("}");
   lines.push("");
 
@@ -727,6 +873,22 @@ function assembleCss(
 }
 
 // ── Public API ──────────────────────────────────────────────────────
+
+/**
+ * Detect whether the extracted site is dark-first (dark bg, light text, no light mode).
+ * Used by templates and spec generators to set the correct default theme.
+ */
+export function detectDarkFirst(cwd: string): boolean {
+  const colorData = readJsonSafe<ColorData>(
+    join(cwd, ".claude/colors/color-data.json"),
+    DEFAULT_COLORS,
+  );
+  const colorDataDark = readJsonSafe<ColorData | null>(
+    join(cwd, ".claude/colors/color-data-dark.json"),
+    null,
+  );
+  return isDarkFirstSite(colorData, colorDataDark);
+}
 
 /**
  * Generate globals.css directly from Phase 0 JSON artifacts.
@@ -748,9 +910,12 @@ export function generateGlobalsCss(cwd: string, _mode: PipelineMode): string {
     null,
   );
 
-  // 2. Sanity check: if the light extraction looks like garbage (dark bg, few colors,
-  //    consent wall), fall back to safe defaults but preserve salvageable data
-  //    (CSS custom properties, accent colors from buttons).
+  // 2. Detect dark-first sites BEFORE sanity check
+  //    A site like Raycast (dark bg, light text) is valid — not garbage.
+  const darkFirst = isDarkFirstSite(colorData, colorDataDark);
+
+  // 3. Sanity check: if extraction is truly broken (few colors, empty page), fallback.
+  //    Dark-first sites pass sanity check since we no longer reject dark backgrounds.
   if (!isColorDataSane(colorData)) {
     const savedCssVars = colorData._cssVars;
     const savedAccent = colorData.accents;
@@ -762,36 +927,43 @@ export function generateGlobalsCss(cwd: string, _mode: PipelineMode): string {
     }
   }
 
-  // 3. Fill nulls with defaults for the light color data (with per-field validation)
-  const mergedColors = mergeColorDefaults(colorData);
+  // 4. Fill nulls with defaults (contrast-aware based on whether site is dark-first)
+  const mergedColors = mergeColorDefaults(colorData, darkFirst);
 
-  // 4. Font faces
+  // 5. Font faces
   const fontFaceRules = buildFontFaces(fontData, cwd);
 
-  // 5. Font variables
+  // 6. Font variables
   const fontVars = buildFontVars(fontData.roles);
 
-  // 6. Primitive scale
+  // 7. Primitive scale
   const primitives = buildPrimitiveScale(mergedColors);
 
-  // 7. Semantic tokens (light)
-  const semantics = buildSemanticTokens(mergedColors, primitives);
+  // 8. Semantic tokens (primary theme — dark for dark-first, light otherwise)
+  const semantics = buildSemanticTokens(mergedColors, primitives, darkFirst);
 
-  // 8. Dark mode overrides — build separate dark gray scale if palettes diverge
-  let darkGrays: Map<number, string> | undefined;
-  if (colorDataDark && hasAnyColor(colorDataDark)) {
-    const darkPrimitives = buildPrimitiveScale(colorDataDark);
-    if (isDarkPaletteDivergent(primitives.grays, darkPrimitives.grays)) {
-      darkGrays = darkPrimitives.grays;
+  // 9. Alternate theme overrides
+  let themeOverrides: string;
+  if (darkFirst) {
+    // Dark-first: generate light mode as the override
+    themeOverrides = buildLightOverrides(primitives);
+  } else {
+    // Light-first: generate dark mode as the override
+    let darkGrays: Map<number, string> | undefined;
+    if (colorDataDark && hasAnyColor(colorDataDark)) {
+      const darkPrimitives = buildPrimitiveScale(colorDataDark);
+      if (isDarkPaletteDivergent(primitives.grays, darkPrimitives.grays)) {
+        darkGrays = darkPrimitives.grays;
+      }
     }
+    themeOverrides = buildDarkOverrides(colorDataDark, primitives, darkGrays);
   }
-  const darkOverrides = buildDarkOverrides(colorDataDark, primitives, darkGrays);
 
-  // 9. Tailwind theme bridge
+  // 10. Tailwind theme bridge
   const themeBridge = buildThemeBridge(fontVars);
 
-  // 10. Assemble
-  return assembleCss(fontFaceRules, fontVars, primitives, semantics, darkOverrides, themeBridge);
+  // 11. Assemble
+  return assembleCss(fontFaceRules, fontVars, primitives, semantics, themeOverrides, themeBridge, darkFirst);
 }
 
 /** Resolve accent primary: use extracted value, fall back to CSS vars, then default */
@@ -807,50 +979,57 @@ function resolveAccentPrimary(data: ColorData): string {
   return DEFAULT_COLORS.accents.primary!;
 }
 
+/** Dark-themed defaults for dark-first sites */
+const DEFAULT_DARK_COLORS: ColorData = {
+  backgrounds: { page: "#0a0a0a", header: "#111111", card: "#1a1a1a", footer: "#0a0a0a" },
+  text: { heading: "#ffffff", body: "#ffffff", muted: "#9c9c9d", link: "#2563eb" },
+  accents: { primary: "#2563eb", primaryText: "#ffffff" },
+  borders: { default: "#2a2a2a" },
+  surfaces: { input: "#1a1a1a" },
+};
+
 /** Merge null fields in color data with sensible defaults, with per-field contrast checks */
-function mergeColorDefaults(data: ColorData): ColorData {
-  const pageBg = data.backgrounds.page ?? DEFAULT_COLORS.backgrounds.page!;
+function mergeColorDefaults(data: ColorData, darkFirst = false): ColorData {
+  const defaults = darkFirst ? DEFAULT_DARK_COLORS : DEFAULT_COLORS;
+  const pageBg = data.backgrounds.page ?? defaults.backgrounds.page!;
 
   // --- Text fields with contrast awareness ---
-  let heading = data.text.heading ?? DEFAULT_COLORS.text.heading;
-  // If heading is the same color as page bg (no contrast), use default
+  let heading = data.text.heading ?? defaults.text.heading;
+  // If heading has no contrast against page bg, use defaults
   if (isValidHex(heading) && isValidHex(pageBg) && contrastRatio(heading, pageBg) < 2.0) {
-    heading = DEFAULT_COLORS.text.heading;
+    heading = defaults.text.heading;
   }
 
-  let body = data.text.body ?? DEFAULT_COLORS.text.body;
+  let body = data.text.body ?? defaults.text.body;
   if (isValidHex(body) && isValidHex(pageBg) && contrastRatio(body, pageBg) < 2.0) {
-    body = DEFAULT_COLORS.text.body;
+    body = defaults.text.body;
   }
 
-  let link = data.text.link ?? DEFAULT_COLORS.text.link;
-  // White link on white bg → use default blue
+  let link = data.text.link ?? defaults.text.link;
   if (isValidHex(link) && isValidHex(pageBg) && contrastRatio(link, pageBg) < 2.0) {
-    link = DEFAULT_COLORS.text.link;
+    link = defaults.text.link;
   }
 
-  // Muted: if null, derive from midpoint of gray scale (will be resolved by buildPrimitiveScale)
-  const muted = data.text.muted ?? DEFAULT_COLORS.text.muted;
+  // Muted: if null, use defaults
+  const muted = data.text.muted ?? defaults.text.muted;
 
   // --- Background fields with luminance divergence checks ---
-  // If card or footer bg luminance diverges >0.7 from page bg, reset to default
-  // (catches e.g. #000000 card on #ffffff page)
   const pageLum = luminance(pageBg);
 
-  let card = data.backgrounds.card ?? DEFAULT_COLORS.backgrounds.card;
+  let card = data.backgrounds.card ?? defaults.backgrounds.card;
   if (isValidHex(card) && Math.abs(luminance(card) - pageLum) > 0.7) {
-    card = DEFAULT_COLORS.backgrounds.card;
+    card = defaults.backgrounds.card;
   }
 
-  let footer = data.backgrounds.footer ?? DEFAULT_COLORS.backgrounds.footer;
+  let footer = data.backgrounds.footer ?? defaults.backgrounds.footer;
   if (isValidHex(footer) && Math.abs(luminance(footer) - pageLum) > 0.7) {
-    footer = DEFAULT_COLORS.backgrounds.footer;
+    footer = defaults.backgrounds.footer;
   }
 
   return {
     backgrounds: {
       page: pageBg,
-      header: data.backgrounds.header ?? DEFAULT_COLORS.backgrounds.header,
+      header: data.backgrounds.header ?? defaults.backgrounds.header,
       card,
       footer,
     },
@@ -862,13 +1041,13 @@ function mergeColorDefaults(data: ColorData): ColorData {
     },
     accents: {
       primary: resolveAccentPrimary(data),
-      primaryText: data.accents.primaryText ?? DEFAULT_COLORS.accents.primaryText,
+      primaryText: data.accents.primaryText ?? defaults.accents.primaryText,
     },
     borders: {
-      default: data.borders.default ?? DEFAULT_COLORS.borders.default,
+      default: data.borders.default ?? defaults.borders.default,
     },
     surfaces: {
-      input: data.surfaces.input ?? DEFAULT_COLORS.surfaces.input,
+      input: data.surfaces.input ?? defaults.surfaces.input,
     },
     _cssVars: data._cssVars,
   };

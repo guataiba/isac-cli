@@ -1,11 +1,13 @@
-import { THEME_INIT_SCRIPT } from "./root-layout-snippet.js";
+import { THEME_INIT_SCRIPT, THEME_INIT_SCRIPT_DARK } from "./root-layout-snippet.js";
 
-export const DESIGN_SYSTEM_LAYOUT_TEMPLATE = `export default function DesignSystemLayout({ children }: { children: React.ReactNode }) {
+export function getDesignSystemLayoutTemplate(isDarkFirst: boolean): string {
+  const script = isDarkFirst ? THEME_INIT_SCRIPT_DARK : THEME_INIT_SCRIPT;
+  return `export default function DesignSystemLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
       <script
         dangerouslySetInnerHTML={{
-          __html: '${THEME_INIT_SCRIPT}',
+          __html: '${script}',
         }}
       />
       <div style={{ background: "var(--color-bg-primary)", color: "var(--color-text-primary)", minHeight: "100vh" }}>
@@ -15,3 +17,7 @@ export const DESIGN_SYSTEM_LAYOUT_TEMPLATE = `export default function DesignSyst
   );
 }
 `;
+}
+
+/** @deprecated Use getDesignSystemLayoutTemplate() instead */
+export const DESIGN_SYSTEM_LAYOUT_TEMPLATE = getDesignSystemLayoutTemplate(false);

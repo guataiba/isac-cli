@@ -85,3 +85,6 @@ export type {
 
 // ── Templates (framework-agnostic) ─────────────────────────
 export { DESIGN_TOKENS_CSS_TEMPLATE } from "./templates/design-tokens.css.js";
+
+// ── CSS Generation ──────────────────────────────────────────
+export { detectDarkFirst } from "./pipeline/css-generator.js";
