@@ -46,6 +46,7 @@ describe("Types", () => {
       mode: "design-system",
       stopAfter: null,
       animations: false,
+      engine: "legacy",
       adapter: mockAdapter,
     };
     expect(ctx.url).toBe("https://example.com");
@@ -65,6 +66,7 @@ describe("Types", () => {
       stopAfter: null,
       animations: false,
       sessionId: "session-123",
+      engine: "legacy",
       adapter: mockAdapter,
     };
     expect(ctx.sessionId).toBe("session-123");
@@ -81,6 +83,7 @@ describe("Types", () => {
         mode,
         stopAfter: null,
         animations: false,
+        engine: "legacy",
         adapter: mockAdapter,
       };
       expect(ctx.mode).toBe(mode);
@@ -104,6 +107,7 @@ describe("Types", () => {
         mode: "design-system",
         stopAfter,
         animations: false,
+        engine: "legacy",
         adapter: mockAdapter,
       };
       expect(ctx.stopAfter).toBe(stopAfter);
